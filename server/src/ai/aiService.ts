@@ -28,8 +28,9 @@ Key guidelines:
 /**
  * Call Google Gemini API via native fetch
  */
-async function callGemini(apiKey: string, messages: ChatMessage[], modelName = 'gemini-1.5-flash'): Promise<AIResponse> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+async function callGemini(apiKey: string, messages: ChatMessage[], modelName = 'gemini-3.5-flash-lite'): Promise<AIResponse> {
+  const modelsToTry = [modelName, 'gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
+  const uniqueModels = Array.from(new Set(modelsToTry));
 
   const contents = messages
     .filter(m => m.role !== 'system')
@@ -49,28 +50,45 @@ async function callGemini(apiKey: string, messages: ChatMessage[], modelName = '
     }
   };
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
+  let lastError = '';
+  for (const mName of uniqueModels) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${mName}:generateContent?key=${apiKey}`;
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`Gemini API error (${res.status}): ${errText}`);
+      if (!res.ok) {
+        lastError = await res.text().catch(() => '');
+        if (res.status === 404 || res.status === 503 || res.status === 429) {
+          continue;
+        }
+        throw new Error(`Gemini API error (${res.status}): ${lastError}`);
+      }
+
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) {
+        throw new Error('Gemini API returned an empty response.');
+      }
+
+      return {
+        reply: text.trim(),
+        provider: 'gemini',
+        model: mName,
+        tokensUsed: data?.usageMetadata?.totalTokenCount
+      };
+    } catch (err: any) {
+      if (err.message?.includes('404') || err.message?.includes('503') || err.message?.includes('429')) {
+        continue;
+      }
+      throw err;
+    }
   }
 
-  const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) {
-    throw new Error('Gemini returned an empty response.');
-  }
-
-  return {
-    reply: text.trim(),
-    provider: 'gemini',
-    model: modelName
-  };
+  throw new Error(`Gemini API error: ${lastError || 'All Gemini models unavailable'}`);
 }
 
 /**
@@ -187,11 +205,11 @@ export function resolveAIConfig(customKey?: string, customProvider?: string): AI
   let provider: AIServiceConfig['provider'] = (customProvider as any) || 'auto';
   if (provider === 'auto') {
     if (customKey) {
-      if (customKey.startsWith('AIzaSy')) provider = 'gemini';
+      if (customKey.startsWith('AIzaSy') || customKey.startsWith('AQ.')) provider = 'gemini';
       else if (customKey.startsWith('sk-ant-')) provider = 'anthropic';
       else if (customKey.startsWith('gsk_')) provider = 'groq';
       else provider = 'openai';
-    } else if (process.env.GEMINI_API_KEY) {
+    } else if (process.env.GEMINI_API_KEY || apiKey.startsWith('AQ.') || apiKey.startsWith('AIzaSy')) {
       provider = 'gemini';
     } else if (process.env.OPENAI_API_KEY) {
       provider = 'openai';
@@ -200,14 +218,14 @@ export function resolveAIConfig(customKey?: string, customProvider?: string): AI
     } else if (process.env.GROQ_API_KEY) {
       provider = 'groq';
     } else {
-      provider = 'openai';
+      provider = 'gemini';
     }
   }
 
   return {
     provider,
     apiKey,
-    model: process.env.AI_MODEL || (provider === 'gemini' ? 'gemini-1.5-flash' : provider === 'groq' ? 'llama-3.3-70b-versatile' : undefined)
+    model: process.env.AI_MODEL || (provider === 'gemini' ? 'gemini-3.5-flash-lite' : provider === 'groq' ? 'llama-3.3-70b-versatile' : undefined)
   };
 }
 
@@ -222,7 +240,7 @@ export async function executeAIConversation(
 
   switch (provider) {
     case 'gemini':
-      return callGemini(apiKey, messages, model || 'gemini-1.5-flash');
+      return callGemini(apiKey, messages, model || 'gemini-3.5-flash-lite');
     case 'groq':
       return callOpenAICompatible(
         apiKey,

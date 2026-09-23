@@ -187,7 +187,7 @@ export function setAIKey(key: string) {
 }
 
 export function getAIProvider(): string {
-  return localStorage.getItem('jarvis_ai_provider') || 'auto';
+  return localStorage.getItem('jarvis_ai_provider') || 'gemini';
 }
 
 export function setAIProvider(provider: string) {
