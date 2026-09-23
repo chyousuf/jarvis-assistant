@@ -32,7 +32,7 @@ export function resolveContact(query: string): ContactResolution {
   }
 
   // 2. Check partial/contains match
-  const partials = db.prepare('SELECT * FROM contacts WHERE LOWER(name) LIKE ?').all(`%${clean}%`) as Contact[];
+  const partials = db.prepare('SELECT * FROM contacts WHERE LOWER(name) LIKE ?').all(`%${clean}%`) as unknown as Contact[];
 
   if (partials.length === 1) {
     return { resolved: true, contact: partials[0], query };
@@ -57,7 +57,7 @@ export function resolveContact(query: string): ContactResolution {
 
 export function listContacts(): Contact[] {
   const db = getDatabase();
-  return db.prepare('SELECT * FROM contacts ORDER BY name ASC').all() as Contact[];
+  return db.prepare('SELECT * FROM contacts ORDER BY name ASC').all() as unknown as Contact[];
 }
 
 export function addContact(name: string, email?: string, phone?: string, company?: string): Contact {

@@ -32,7 +32,7 @@ router.post('/:id/send', async (req: Request, res: Response) => {
     const { id } = req.params;
     const { idempotencyKey } = req.body;
     const result = await sendEmail(id, idempotencyKey);
-    res.json({ success: true, ...result });
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

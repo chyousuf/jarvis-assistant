@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { PORT, HOST, WORKSPACE_DIR, DB_PATH, APP_TIMEZONE } from './config.js';
 import { getDatabase, getActivityLogs } from './db/database.js';
@@ -14,13 +14,38 @@ import whatsappRouter from './routes/whatsapp.js';
 import calendarRouter from './routes/calendar.js';
 import oauthRouter from './routes/oauth.js';
 import computerRouter from './routes/computer.js';
+import companionRouter, { pairingToken, TOKEN_FILE } from './routes/companion.js';
 import voiceRouter from './routes/voice.js';
 import { subscribeToTaskEvents } from './tasks/taskRunner.js';
 import { pollDueReminders } from './tools/reminders.js';
 
 const app = express();
 
-app.use(cors());
+const ALLOWED_ORIGINS = [
+  'https://jarvis-assistant-pi-dun.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174'
+];
+
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const origin = req.headers.origin as string;
+  if (!origin || ALLOWED_ORIGINS.includes(origin) || origin.endsWith('.vercel.app')) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+  }
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-ai-api-key, x-ai-provider');
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+  next();
+});
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -56,6 +81,7 @@ app.use('/api/whatsapp', whatsappRouter);
 app.use('/api/calendar', calendarRouter);
 app.use('/api/oauth', oauthRouter);
 app.use('/api/computer', computerRouter);
+app.use('/api/companion', companionRouter);
 app.use('/api/voice', voiceRouter);
 
 // Server-Sent Events (SSE) for Real-Time Telemetry & Progress
@@ -114,6 +140,7 @@ app.listen(PORT, HOST, () => {
   console.log(`🕒 Server Timezone: ${APP_TIMEZONE}`);
   console.log(`📁 Sandboxed Workspace: ${WORKSPACE_DIR}`);
   console.log(`💾 SQLite Database: ${DB_PATH}`);
+  console.log(`🔐 Companion Pairing Token: ${pairingToken}`);
   console.log(`📡 Telemetry SSE Stream: http://${HOST}:${PORT}/events`);
   console.log(`======================================================\n`);
 });

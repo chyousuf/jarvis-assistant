@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
+    "companion": "tsx src/companion.ts",
     "build": "tsc",
     "test": "tsx --test --test-concurrency=1 tests/*.test.ts"
   },

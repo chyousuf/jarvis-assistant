@@ -111,13 +111,13 @@ export async function createCalendarEvent(
   `).run(
     event.id,
     event.title,
-    event.description,
+    event.description || null,
     event.start_time,
     event.end_time,
     JSON.stringify(event.attendees),
     event.timezone,
     event.status,
-    event.idempotency_key,
+    event.idempotency_key || null,
     event.created_at,
     event.updated_at
   );

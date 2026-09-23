@@ -107,7 +107,7 @@ export async function createEmailDraft(
     draft.body,
     JSON.stringify(draft.attachments),
     draft.status,
-    draft.idempotency_key,
+    draft.idempotency_key || null,
     draft.provider,
     draft.created_at,
     draft.updated_at

@@ -210,7 +210,7 @@ export async function openBrowserAndSearch(query: string, engine: 'youtube' | 'g
 export async function typeTextIntoActiveField(
   text: string,
   options: { replace?: boolean; submitWithReturn?: boolean } = {}
-): Promise<{ success: boolean; charCount: number; targetApp: string }> {
+): Promise<{ success: boolean; charCount: number; targetApp: string; pastedViaKeystroke?: boolean }> {
   const windowInfo = inspectActiveWindow();
 
   // Copy text to system clipboard

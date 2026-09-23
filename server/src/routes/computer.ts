@@ -29,7 +29,7 @@ router.post('/open-app', async (req: Request, res: Response) => {
       return;
     }
     const result = await computerTools.openApp(appName);
-    res.json({ success: true, ...result });
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -44,7 +44,7 @@ router.post('/search', async (req: Request, res: Response) => {
       return;
     }
     const result = await computerTools.openSearch(query, engine);
-    res.json({ success: true, ...result });
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -59,7 +59,7 @@ router.post('/type', async (req: Request, res: Response) => {
       return;
     }
     const result = await computerTools.typeText(text, { replace, submitWithReturn });
-    res.json({ success: true, ...result });
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -94,7 +94,7 @@ router.post('/find-file', async (req: Request, res: Response) => {
 router.post('/screen', (_req: Request, res: Response) => {
   try {
     const result = computerTools.captureScreen();
-    res.json({ success: true, ...result });
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -104,10 +104,12 @@ router.post('/screen', (_req: Request, res: Response) => {
 router.post('/stop', (_req: Request, res: Response) => {
   try {
     const result = computerTools.stop();
-    res.json({ success: true, ...result });
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
 // Create and Save Document Workflow
 router.post('/create-document', async (req: Request, res: Response) => {
   try {
@@ -117,7 +119,7 @@ router.post('/create-document', async (req: Request, res: Response) => {
       return;
     }
     const result = await computerTools.createDocument(appName, content, filename);
-    res.json({ success: true, ...result });
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

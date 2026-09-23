@@ -31,7 +31,7 @@ router.post('/:id/send', async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const result = await sendWhatsAppMessage(id);
-    res.json({ success: true, ...result });
+    res.json(result);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
