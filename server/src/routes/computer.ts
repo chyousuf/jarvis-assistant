@@ -108,6 +108,19 @@ router.post('/stop', (_req: Request, res: Response) => {
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+// Create and Save Document Workflow
+router.post('/create-document', async (req: Request, res: Response) => {
+  try {
+    const { appName = 'TextEdit', content, filename } = req.body;
+    if (!content || !filename) {
+      res.status(400).json({ error: 'content and filename are required' });
+      return;
+    }
+    const result = await computerTools.createDocument(appName, content, filename);
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 export default router;

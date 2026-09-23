@@ -7,6 +7,7 @@ import {
   inspectActiveWindow,
   captureScreen,
   stopAllActions,
+  createAndSaveDocument,
   WindowInfo,
   ReadContentResult,
   FileSearchResult
@@ -49,5 +50,9 @@ export const computerTools = {
 
   getOSStatus(): OSPermissionStatus {
     return detectOSAndPermissions();
+  },
+
+  async createDocument(appName: string, content: string, targetFilename: string) {
+    return await createAndSaveDocument(appName, content, targetFilename);
   }
 };

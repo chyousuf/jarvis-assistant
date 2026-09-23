@@ -174,6 +174,26 @@ export function setCompanionToken(token: string) {
   }
 }
 
+export function getAIKey(): string {
+  return localStorage.getItem('jarvis_ai_key') || '';
+}
+
+export function setAIKey(key: string) {
+  if (key) {
+    localStorage.setItem('jarvis_ai_key', key.trim());
+  } else {
+    localStorage.removeItem('jarvis_ai_key');
+  }
+}
+
+export function getAIProvider(): string {
+  return localStorage.getItem('jarvis_ai_provider') || 'auto';
+}
+
+export function setAIProvider(provider: string) {
+  localStorage.setItem('jarvis_ai_provider', provider);
+}
+
 /**
  * Resilient JSON fetch helper that inspects status, validates Content-Type,
  * and guards against HTML/empty responses that cause "Unexpected end of JSON input".
@@ -182,6 +202,16 @@ export async function fetchJson<T = any>(url: string, options: RequestInit = {})
   const headers = new Headers(options.headers || {});
   if (!headers.has('Content-Type') && options.body && typeof options.body === 'string') {
     headers.set('Content-Type', 'application/json');
+  }
+
+  // Inject AI Key and Provider if available
+  const aiKey = getAIKey();
+  if (aiKey && !headers.has('x-ai-api-key')) {
+    headers.set('x-ai-api-key', aiKey);
+  }
+  const aiProvider = getAIProvider();
+  if (aiProvider && !headers.has('x-ai-provider')) {
+    headers.set('x-ai-provider', aiProvider);
   }
 
   let res: Response;

@@ -8,6 +8,7 @@ import { prepareWhatsAppMessage } from '../tools/whatsappService.js';
 import { listApprovals, resolveApproval } from '../tasks/approvalManager.js';
 import { execSync } from 'child_process';
 import { computerTools } from '../tools/computerTools.js';
+import { resolveAIConfig, executeAIConversation, ChatMessage } from './aiService.js';
 
 export interface OrchestrationResult {
   reply: string;
@@ -179,6 +180,23 @@ export class JarvisOrchestrator {
         reply: `Opened YouTube in default browser and executed search for: **"${query}"**.\n\nURL: ${res.url}`,
         needsClarification: false,
         audioText: `Opening YouTube and searching for ${query}.`
+      };
+    }
+
+    // 2.1 Acceptance Workflow: "Open TextEdit, write ‘This is a JARVIS test’, and save it as jarvis-test.txt in my approved workspace"
+    const acceptWorkflowMatch = text.match(/open\s+(textedit|editor|word)[,\s]+write\s+['"‘]([\s\S]+?)['"’][,\s]+and\s+save\s+it\s+as\s+([a-zA-Z0-9_.-]+)\s+in\s+(?:my\s+)?(?:approved\s+)?workspace/i);
+    if (acceptWorkflowMatch) {
+      const editorApp = acceptWorkflowMatch[1];
+      const content = acceptWorkflowMatch[2];
+      const filename = acceptWorkflowMatch[3];
+
+      const saveRes = await computerTools.createDocument(editorApp, content, filename);
+
+      return {
+        reply: `Desktop workflow verified and executed successfully:\n\n- **Target Application**: ${saveRes.appName}\n- **Saved File**: \`${saveRes.filename}\`\n- **Full Path**: \`${saveRes.fullPath}\`\n- **Bytes Written**: ${saveRes.bytesWritten} bytes\n- **File Content**: "${content}"\n\nThe document has been saved to your approved workspace and opened in ${saveRes.appName}.`,
+        needsClarification: false,
+        audioText: `Created and saved ${filename} in approved workspace with ${saveRes.appName}.`,
+        interpretedAction: `TextEdit workflow: save ${filename} with content "${content}"`
       };
     }
 
@@ -656,19 +674,51 @@ export class JarvisOrchestrator {
       };
     }
 
-    // Greetings & General Fallback
+    // Ordinary Conversation: Connect to Real AI Backend
+    const aiConfig = resolveAIConfig();
+    if (aiConfig) {
+      try {
+        const contextMessages: ChatMessage[] = [];
+        for (const h of history.slice(-6)) {
+          if (h.content) {
+            contextMessages.push({
+              role: h.role === 'user' ? 'user' : 'assistant',
+              content: h.content
+            });
+          }
+        }
+        contextMessages.push({ role: 'user', content: text });
+
+        const aiRes = await executeAIConversation(contextMessages, aiConfig);
+        return {
+          reply: aiRes.reply,
+          needsClarification: false,
+          audioText: aiRes.reply,
+          interpretedAction: `AI Conversation via ${aiRes.provider} (${aiRes.model})`
+        };
+      } catch (aiErr: any) {
+        return {
+          reply: `⚠️ **AI Service Error (${aiConfig.provider})**:\n\n${aiErr.message || 'Call to AI provider failed.'}\n\nPlease check your API key in the Connections tab.`,
+          needsClarification: false,
+          audioText: "AI service returned an error. Please verify your credentials."
+        };
+      }
+    }
+
+    // Direct greetings if AI key is not yet set
     if (lower === 'hello' || lower === 'hi' || lower === 'hey jarvis' || lower === 'jarvis' || lower === 'salam') {
       return {
-        reply: "Greetings, sir. JARVIS is ready. I can draft emails, send WhatsApp messages, search web intelligence, manage your schedule, and execute multi-step tasks.",
+        reply: "Greetings, sir. JARVIS is ready. I can draft emails, send WhatsApp messages, search web intelligence, manage your schedule, and execute multi-step tasks. Connect an AI API key in Connections for unrestricted general reasoning.",
         needsClarification: false,
         audioText: "Greetings, sir. JARVIS is online and ready."
       };
     }
 
+    // Honest reporting when AI service is unavailable
     return {
-      reply: `I have processed your command: "${text}". I can execute this through connected tools: WhatsApp, Email, Calendar, or Workspace documents. Would you like me to initiate an automated task?`,
+      reply: `⚠️ **AI Service Unavailable**:\n\nNo LLM API key (Google Gemini, OpenAI, Anthropic, or Groq) is currently configured.\n\nTo enable intelligent conversation, math calculation (e.g. "What is 17 multiplied by 6?"), and text composition, please configure an API key in the **Connections** tab or set \`GEMINI_API_KEY\` in your environment.`,
       needsClarification: false,
-      audioText: `I have received your request. Would you like me to initiate a task?`
+      audioText: "AI service is unavailable. Please configure an API key in Connections."
     };
   }
 }

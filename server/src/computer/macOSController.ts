@@ -128,6 +128,18 @@ export async function openApplication(appName: string): Promise<{ success: boole
     return { success: true, appName: 'YouTube', mode: 'web', details: 'Opened YouTube in default browser.' };
   }
 
+  // 2.5 Chrome handling
+  if (lower.includes('chrome')) {
+    const chromePath = '/Applications/Google Chrome.app';
+    if (fs.existsSync(chromePath)) {
+      execSync(`open -a "Google Chrome"`);
+      return { success: true, appName: 'Google Chrome', mode: 'native', details: 'Opened Google Chrome desktop application.' };
+    } else {
+      execSync(`open "https://www.google.com"`);
+      return { success: true, appName: 'Google Chrome', mode: 'web', details: 'Opened Google in default browser.' };
+    }
+  }
+
   // 3. Word / Text Editor handling
   if (lower.includes('word') || lower.includes('textedit') || lower.includes('editor')) {
     const wordPath = '/Applications/Microsoft Word.app';
@@ -439,5 +451,47 @@ export function stopAllActions(): { speechStopped: boolean; timestamp: string } 
   return {
     speechStopped,
     timestamp: new Date().toISOString()
+  };
+}
+
+/**
+ * Creates and saves a document into the approved workspace and activates the target editor
+ */
+export async function createAndSaveDocument(
+  appName: string,
+  content: string,
+  targetFilename: string
+): Promise<{ success: boolean; appName: string; filename: string; fullPath: string; bytesWritten: number }> {
+  const safeFilename = path.basename(targetFilename);
+  const fullPath = path.join(WORKSPACE_DIR, safeFilename);
+
+  // Write content to approved workspace directory
+  fs.writeFileSync(fullPath, content, 'utf8');
+
+  if (!fs.existsSync(fullPath)) {
+    throw new Error(`Failed to save file to ${fullPath}`);
+  }
+  const stat = fs.statSync(fullPath);
+
+  // Launch target app with the saved document
+  try {
+    const cleanApp = appName.toLowerCase().includes('textedit') ? 'TextEdit' : appName;
+    execSync(`open -a "${cleanApp}" "${fullPath}"`, { timeout: 4000 });
+  } catch {
+    try {
+      execSync(`open "${fullPath}"`);
+    } catch {
+      // ignore
+    }
+  }
+
+  logActivity('computer', 'create_and_save_document', { appName, filename: safeFilename, bytesWritten: stat.size });
+
+  return {
+    success: true,
+    appName,
+    filename: safeFilename,
+    fullPath,
+    bytesWritten: stat.size
   };
 }

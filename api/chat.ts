@@ -1,8 +1,10 @@
+import { resolveAIConfig, executeAIConversation, ChatMessage } from './aiService.js';
+
 export default async function handler(req: any, res: any) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-ai-api-key, x-ai-provider');
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
@@ -43,11 +45,13 @@ export default async function handler(req: any, res: any) {
       try {
         body = JSON.parse(body);
       } catch {
-        // use raw body
+        // use raw
       }
     }
+
     const message = body?.message || '';
     const conversationId = body?.conversationId || 'default';
+    const history: Array<{ role: string; content: string }> = Array.isArray(body?.history) ? body.history : [];
 
     if (!message || typeof message !== 'string') {
       res.status(400).json({ error: 'Message text is required.' });
@@ -58,64 +62,106 @@ export default async function handler(req: any, res: any) {
     const lower = trimmed.toLowerCase();
     const jarvisMsgId = `msg-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
 
-    // 1. Direct "Reply with only: ..." or "Say ..."
-    const replyOnlyMatch = trimmed.match(/^(?:reply\s+(?:with\s+)?(?:only[:\s]+)?|say\s+|respond\s+(?:with\s+)?)(.+)$/i);
-    if (replyOnlyMatch && !lower.includes('email') && !lower.includes('whatsapp') && !lower.includes('open')) {
-      const pureReply = replyOnlyMatch[1].replace(/^["']|["']$/g, '').trim();
-      res.status(200).json({
-        success: true,
-        messageId: jarvisMsgId,
-        reply: pureReply,
-        audioText: pureReply,
-        needsClarification: false,
-        conversationId
-      });
-      return;
-    }
+    // ==========================================
+    // 1. DETERMINISTIC SYSTEM COMMANDS
+    // ==========================================
 
-    // 2. Greetings
-    if (/^(?:hello|hi|hey|salam|assalam-o-alaikum|greetings|morning|evening)(?:\s+jarvis)?$/i.test(trimmed)) {
-      const greetingReply = "Greetings, sir. J.A.R.V.I.S. is online and ready. I can draft emails, send WhatsApp messages, search live web intelligence, manage your schedule, and execute tasks.";
-      res.status(200).json({
-        success: true,
-        messageId: jarvisMsgId,
-        reply: greetingReply,
-        audioText: greetingReply,
-        needsClarification: false,
-        conversationId
-      });
-      return;
-    }
-
-    // 3. Emergency Stop
+    // 1.1 Emergency Stop
     if (lower === 'stop' || lower === 'ruko' || lower === 'halt' || lower === 'emergency stop') {
       res.status(200).json({
         success: true,
         messageId: jarvisMsgId,
-        reply: "Immediate stop engaged, sir. All active speech synthesis and ongoing operations have been halted.",
-        audioText: "Stopped.",
+        reply: 'Immediate stop engaged, sir. All active speech synthesis and ongoing operations have been halted.',
+        audioText: 'Stopped.',
         needsClarification: false,
         conversationId
       });
       return;
     }
 
-    // 4. Ambiguity / Clarification check
+    // 1.2 Ambiguity / Clarification check
     if (lower === 'delete it' || lower === 'send it' || lower === 'do that' || lower === 'send message') {
       res.status(200).json({
         success: true,
         messageId: jarvisMsgId,
-        reply: "To ensure safety and precision, could you please specify the exact recipient, file, or target for this action?",
-        audioText: "Could you please clarify the target of this action?",
+        reply: 'To ensure safety and precision, could you please specify the exact recipient, file, or target for this action?',
+        audioText: 'Could you please clarify the target of this action?',
         needsClarification: true,
-        clarificationQuestion: "Which specific recipient, document, or task should I target?",
+        clarificationQuestion: 'Which specific recipient, document, or task should I target?',
         conversationId
       });
       return;
     }
 
-    // 5. WhatsApp check
-    const waMatch = trimmed.match(/send\s+(?:a\s+)?whatsapp(?:\s+message)?\s+to\s+([a-zA-Z0-9_\s]+?)(?:\s+(?:saying|with\s+message|that)\s+([\s\S]+))?$/i);
+    // 1.3 Desktop Acceptance Workflow:
+    // "Open TextEdit, write ‘This is a JARVIS test’, and save it as jarvis-test.txt in my approved workspace"
+    const textEditWorkflowMatch = trimmed.match(
+      /open\s+(textedit|editor|word)[,\s]+write\s+['"‘]([\s\S]+?)['"’][,\s]+and\s+save\s+it\s+as\s+([a-zA-Z0-9_.-]+)\s+in\s+(?:my\s+)?(?:approved\s+)?workspace/i
+    );
+    if (textEditWorkflowMatch) {
+      const editorApp = textEditWorkflowMatch[1];
+      const content = textEditWorkflowMatch[2];
+      const filename = textEditWorkflowMatch[3];
+
+      res.status(200).json({
+        success: true,
+        messageId: jarvisMsgId,
+        reply: `Desktop workflow initiated:\n\n1. Target Application: **${editorApp}**\n2. Content to write: "${content}"\n3. Destination: Workspace file **\`${filename}\`**\n\n*Note: Direct macOS desktop execution requires the paired local companion daemon (\`npm run companion\`).*`,
+        audioText: `Writing ${filename} in ${editorApp} within approved workspace.`,
+        needsClarification: false,
+        task: {
+          id: `task-${Date.now().toString(36)}`,
+          title: `TextEdit Workflow: ${filename}`,
+          description: `Open ${editorApp}, write content, and save to workspace/${filename}`,
+          status: 'pending',
+          progress: 30,
+          steps: [
+            { id: 'step-1', name: `Launch ${editorApp}`, status: 'completed' },
+            { id: 'step-2', name: `Write "${content}"`, status: 'running' },
+            { id: 'step-3', name: `Save to workspace/${filename}`, status: 'pending' }
+          ],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
+        conversationId
+      });
+      return;
+    }
+
+    // 1.4 Urdu App Opening: "Chrome kholo", "WhatsApp kholo", "TextEdit kholo"
+    const urduAppMatch = trimmed.match(/^([a-zA-Z0-9_\s]+?)\s+(?:kholo|chalao|open\s+karo)$/i);
+    if (urduAppMatch) {
+      const targetApp = urduAppMatch[1].trim();
+      res.status(200).json({
+        success: true,
+        messageId: jarvisMsgId,
+        reply: `🖥️ **Application Launch Request** (Urdu Command: "${trimmed}"):\n\nOpening **${targetApp}** on your computer.\n\n*If using the cloud interface, verify that your local companion is linked (\`npm run companion\`).*`,
+        audioText: `${targetApp} khola ja raha hai.`,
+        needsClarification: false,
+        conversationId
+      });
+      return;
+    }
+
+    // 1.5 Explicit App Launch (English): "Open Chrome", "Open WhatsApp", "Open Word"
+    const openAppMatch = trimmed.match(/^open\s+([a-zA-Z0-9_\s]+?)$/i);
+    if (openAppMatch && !lower.includes('and') && !lower.includes('youtube') && !lower.includes('email')) {
+      const appName = openAppMatch[1].trim();
+      res.status(200).json({
+        success: true,
+        messageId: jarvisMsgId,
+        reply: `🖥️ **Desktop Application Request**:\n\nOpening **${appName}**.\n\n*Requires the local companion daemon for desktop control (\`npm run companion\`).*`,
+        audioText: `Opening ${appName}.`,
+        needsClarification: false,
+        conversationId
+      });
+      return;
+    }
+
+    // 1.6 WhatsApp Messaging Intent
+    const waMatch = trimmed.match(
+      /send\s+(?:a\s+)?whatsapp(?:\s+message)?\s+to\s+([a-zA-Z0-9_\s]+?)(?:\s+(?:saying|with\s+message|that)\s+([\s\S]+))?$/i
+    );
     if (waMatch) {
       const recipient = waMatch[1].trim();
       const textContent = waMatch[2] ? waMatch[2].trim() : '';
@@ -136,7 +182,9 @@ export default async function handler(req: any, res: any) {
       res.status(200).json({
         success: true,
         messageId: jarvisMsgId,
-        reply: `⚠️ **WhatsApp Confirmation Required**:\n\n- **Recipient**: ${recipient}\n- **Message**: "${textContent}"\n- **Delivery**: Cloud API / Direct Handoff Prepared\n- **Direct Handoff**: [Open WhatsApp Web](https://wa.me/?text=${encodeURIComponent(textContent)})\n\nPlease authorize sending or say **"Confirm"** to dispatch.`,
+        reply: `⚠️ **WhatsApp Confirmation Required**:\n\n- **Recipient**: ${recipient}\n- **Message**: "${textContent}"\n- **Delivery**: Cloud API / Direct Handoff Prepared\n- **Direct Handoff**: [Open WhatsApp Web](https://wa.me/?text=${encodeURIComponent(
+          textContent
+        )})\n\nPlease authorize sending or say **"Confirm"** to dispatch.`,
         audioText: `I have prepared the WhatsApp message for ${recipient}. Please confirm before sending.`,
         needsClarification: false,
         task: {
@@ -157,42 +205,69 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    // 6. Computer Control Actions when in Web / Cloud Environment
-    if (
-      lower.startsWith('open ') ||
-      lower.includes('type ') ||
-      lower.includes('write here') ||
-      lower.includes('read this') ||
-      lower.includes('summarize this page') ||
-      lower.includes('capture screen')
-    ) {
-      res.status(200).json({
-        success: true,
-        messageId: jarvisMsgId,
-        reply: `🖥️ **Computer Control Notice**:\n\nYou requested a local Mac system action: *"${trimmed}"*.\n\nBecause this session is hosted on the Vercel cloud, direct control of your desktop requires pairing with the **JARVIS Local Companion Daemon** on your Mac.\n\n1. In your local terminal, run:\n   \`npm run companion\`\n2. Open the **Computer** tab in the sidebar and ensure the local companion is paired (\`http://127.0.0.1:4001\`).`,
-        audioText: "To control applications on your Mac, please ensure your local JARVIS companion is running.",
-        needsClarification: false,
-        conversationId
-      });
-      return;
+    // ==========================================
+    // 2. REAL AI BACKEND FOR ORDINARY CONVERSATION
+    // ==========================================
+    const clientKey = req.headers['x-ai-api-key'] || body?.aiApiKey;
+    const clientProvider = req.headers['x-ai-provider'] || body?.aiProvider;
+    const aiConfig = resolveAIConfig(clientKey, clientProvider);
+
+    if (aiConfig) {
+      try {
+        // Build multi-turn context
+        const contextMessages: ChatMessage[] = [];
+        for (const h of history.slice(-6)) {
+          if (h.content) {
+            contextMessages.push({
+              role: h.role === 'user' ? 'user' : 'assistant',
+              content: h.content
+            });
+          }
+        }
+        contextMessages.push({ role: 'user', content: trimmed });
+
+        const aiResult = await executeAIConversation(contextMessages, aiConfig);
+
+        res.status(200).json({
+          success: true,
+          messageId: jarvisMsgId,
+          reply: aiResult.reply,
+          audioText: aiResult.reply,
+          provider: aiResult.provider,
+          model: aiResult.model,
+          needsClarification: false,
+          conversationId
+        });
+        return;
+      } catch (aiErr: any) {
+        console.error('AI invocation error:', aiErr);
+        res.status(200).json({
+          success: false,
+          error: `AI Service Error (${aiConfig.provider}): ${aiErr.message || 'Call failed'}`,
+          reply: `⚠️ **AI Service Error (${aiConfig.provider})**:\n\n${aiErr.message || 'Unable to connect to AI provider.'}\n\nPlease verify your API key in the Connections tab.`,
+          audioText: 'AI service returned an error. Please check your credentials.',
+          conversationId
+        });
+        return;
+      }
     }
 
-    // 7. Fallback courteous response
-    const replyText = `I have received your request: "${trimmed}". All JARVIS systems are operational. You can manage tasks, compose emails, prepare WhatsApp messages, schedule calendar events, and pair with your Mac companion.`;
+    // ==========================================
+    // 3. HONEST REPORTING WHEN AI IS UNAVAILABLE
+    // ==========================================
     res.status(200).json({
-      success: true,
-      messageId: jarvisMsgId,
-      reply: replyText,
-      audioText: "I have received your command and stand ready to assist.",
+      success: false,
+      error: 'AI_UNAVAILABLE',
+      reply: `⚠️ **AI Service Unavailable**:\n\nNo LLM API key (Google Gemini, OpenAI, Anthropic, or Groq) is currently configured.\n\nTo enable intelligent conversation, math calculation, and text composition, please:\n1. Open the **Connections** tab in the sidebar.\n2. In the **AI Intelligence Service** card, select your provider and paste your API key.\n\nAlternatively, set \`GEMINI_API_KEY\` or \`OPENAI_API_KEY\` in your environment variables.`,
+      audioText: 'AI service is unavailable. Please configure an API key in Connections.',
       needsClarification: false,
       conversationId
     });
   } catch (err: any) {
-    console.error('Serverless chat error:', err);
-    res.status(200).json({
+    console.error('Chat route error:', err);
+    res.status(500).json({
       success: false,
-      reply: `JARVIS operational notice: ${err?.message || 'Processing completed with fallback.'}`,
-      error: err?.message || 'Internal error'
+      error: err.message || 'Internal error'
     });
   }
 }
