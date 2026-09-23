@@ -706,11 +706,25 @@ export class JarvisOrchestrator {
     }
 
     // Direct greetings if AI key is not yet set
-    if (lower === 'hello' || lower === 'hi' || lower === 'hey jarvis' || lower === 'jarvis' || lower === 'salam') {
+    const isGreeting =
+      /^(?:hy+|hi+|hello+|helo+|hey+(?:\s+jarvis)?|greetings|good\s+(?:morning|afternoon|evening|day)|salam|assalam\s*(?:o\s*)?alaikum|aoa|kya\s+haal\s+hai|kaise\s+ho|kaisay\s+ho)[!.,?\s]*$/i.test(
+        text.trim()
+      ) ||
+      lower === 'jarvis' ||
+      lower === 'who are you' ||
+      lower === 'what can you do' ||
+      lower === 'help';
+
+    if (isGreeting) {
+      const isUrdu = /salam|alaikum|aoa|haal|kaise|kaisay/i.test(text);
       return {
-        reply: "Greetings, sir. JARVIS is ready. I can draft emails, send WhatsApp messages, search web intelligence, manage your schedule, and execute multi-step tasks. Connect an AI API key in Connections for unrestricted general reasoning.",
+        reply: isUrdu
+          ? "Walaikum Assalam, sir! J.A.R.V.I.S. hazir hai. Main aap ke computer par apps khol sakta hoon (maslan 'Chrome kholo'), files aur workspace control kar sakta hoon, aur WhatsApp ya emails prepare kar sakta hoon.\n\nMazeed open-ended reasoning aur sawalat ke liye, aap **Connections** tab mein ja kar apni AI API key connect kar saktay hain."
+          : "Hello, sir. J.A.R.V.I.S. is online and standing by.\n\nI can open desktop applications (e.g. *'Chrome kholo'* or *'Open TextEdit'*), search YouTube, manage workspace files, and prepare emails and WhatsApp messages.\n\n*Tip: To unlock open-ended AI reasoning, math calculations, and custom writing, configure your API key in the **Connections** tab.*",
         needsClarification: false,
-        audioText: "Greetings, sir. JARVIS is online and ready."
+        audioText: isUrdu
+          ? "Walaikum Assalam, sir. JARVIS hazir hai. Main aap ki kya madad kar sakta hoon?"
+          : "Hello, sir. J.A.R.V.I.S. is online and standing by. How may I assist you today?"
       };
     }
 

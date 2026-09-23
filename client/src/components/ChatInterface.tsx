@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Mic, AlertTriangle, CheckCircle2, XCircle, Clock, Shield, ArrowRight, Sparkles, RefreshCw, MessageSquare, Mail, Calendar, ExternalLink } from 'lucide-react';
+import { Send, Mic, AlertTriangle, CheckCircle2, XCircle, Clock, Shield, ArrowRight, Sparkles, RefreshCw, MessageSquare, Mail, Calendar, ExternalLink, Key } from 'lucide-react';
 import { Message, Task, Approval } from '../services/api.js';
 import { VoiceState } from '../services/voice.js';
+import { ActiveTab } from './Header.js';
 
 interface ChatInterfaceProps {
   messages: Message[];
@@ -15,6 +16,7 @@ interface ChatInterfaceProps {
   isListening: boolean;
   onToggleListening: () => void;
   voiceTranscript: string;
+  onNavigateTab?: (tab: ActiveTab) => void;
 }
 
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
@@ -28,7 +30,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   voiceState,
   isListening,
   onToggleListening,
-  voiceTranscript
+  voiceTranscript,
+  onNavigateTab
 }) => {
   const [inputText, setInputText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -125,6 +128,17 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             >
               <div className="whitespace-pre-wrap font-sans">
                 {msg.content}
+                {msg.sender === 'jarvis' && onNavigateTab && (msg.content.includes('Connections') || msg.content.includes('AI Service Unavailable')) && (
+                  <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center gap-2">
+                    <button
+                      onClick={() => onNavigateTab('connections')}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-mono transition-all group shadow-sm"
+                    >
+                      <Key className="w-3.5 h-3.5 text-cyan-400 group-hover:rotate-45 transition-transform" />
+                      <span>Open Connections &amp; Add AI Key &rarr;</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>

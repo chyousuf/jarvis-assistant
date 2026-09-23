@@ -355,6 +355,7 @@ export const App: React.FC = () => {
               isListening={isListening}
               onToggleListening={handleToggleListening}
               voiceTranscript={voiceTranscript}
+              onNavigateTab={(tab) => setActiveTab(tab)}
             />
           )}
 

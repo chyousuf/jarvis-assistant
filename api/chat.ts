@@ -63,8 +63,43 @@ export default async function handler(req: any, res: any) {
     const jarvisMsgId = `msg-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
 
     // ==========================================
-    // 1. DETERMINISTIC SYSTEM COMMANDS
+    // 1. DETERMINISTIC SYSTEM COMMANDS & GREETINGS
     // ==========================================
+
+    // 1.0 Friendly Greetings (hy, hi, hello, salam, hey, etc.)
+    const isGreeting =
+      /^(?:hy+|hi+|hello+|helo+|hey+(?:\s+jarvis)?|greetings|good\s+(?:morning|afternoon|evening|day)|salam|assalam\s*(?:o\s*)?alaikum|aoa|kya\s+haal\s+hai|kaise\s+ho|kaisay\s+ho)[!.,?\s]*$/i.test(
+        trimmed
+      ) ||
+      lower === 'jarvis' ||
+      lower === 'who are you' ||
+      lower === 'what can you do' ||
+      lower === 'help';
+
+    if (isGreeting) {
+      const clientKey = req.headers['x-ai-api-key'] || body?.aiApiKey;
+      const clientProvider = req.headers['x-ai-provider'] || body?.aiProvider;
+      const aiConfig = resolveAIConfig(clientKey, clientProvider);
+
+      if (!aiConfig) {
+        const isUrdu = /salam|alaikum|aoa|haal|kaise|kaisay/i.test(trimmed);
+        const greetingReply = isUrdu
+          ? "Walaikum Assalam, sir! J.A.R.V.I.S. hazir hai. Main aap ke computer par apps khol sakta hoon (maslan 'Chrome kholo'), files aur workspace control kar sakta hoon, aur WhatsApp ya emails prepare kar sakta hoon.\n\nMazeed open-ended reasoning aur sawalat ke liye, aap **Connections** tab mein ja kar apni AI API key connect kar saktay hain."
+          : "Hello, sir. J.A.R.V.I.S. is online and standing by.\n\nI can open desktop applications (e.g. *'Chrome kholo'* or *'Open TextEdit'*), search YouTube, manage workspace files, and prepare emails and WhatsApp messages.\n\n*Tip: To unlock open-ended AI reasoning, math calculations, and custom writing, configure your API key in the **Connections** tab.*";
+
+        res.status(200).json({
+          success: true,
+          messageId: jarvisMsgId,
+          reply: greetingReply,
+          audioText: isUrdu
+            ? "Walaikum Assalam, sir. JARVIS hazir hai. Main aap ki kya madad kar sakta hoon?"
+            : "Hello, sir. J.A.R.V.I.S. is online and standing by. How may I assist you today?",
+          needsClarification: false,
+          conversationId
+        });
+        return;
+      }
+    }
 
     // 1.1 Emergency Stop
     if (lower === 'stop' || lower === 'ruko' || lower === 'halt' || lower === 'emergency stop') {
