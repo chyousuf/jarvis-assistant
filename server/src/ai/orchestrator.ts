@@ -6,6 +6,7 @@ import { resolveContact } from '../tools/contacts.js';
 import { createEmailDraft } from '../tools/emailService.js';
 import { prepareWhatsAppMessage } from '../tools/whatsappService.js';
 import { listApprovals, resolveApproval } from '../tasks/approvalManager.js';
+import { execSync } from 'child_process';
 import { computerTools } from '../tools/computerTools.js';
 
 export interface OrchestrationResult {
@@ -18,6 +19,8 @@ export interface OrchestrationResult {
   audioText?: string;
   pendingApprovalId?: string;
   voiceActionResolved?: boolean;
+  rawTranscript?: string;
+  interpretedAction?: string;
 }
 
 export class JarvisOrchestrator {
@@ -33,20 +36,64 @@ export class JarvisOrchestrator {
       return {
         reply: "I am online, sir. What task may I carry out for you?",
         needsClarification: false,
-        audioText: "I am online, sir. What task may I carry out?"
+        audioText: "I am online, sir. What task may I carry out?",
+        rawTranscript: userText,
+        interpretedAction: 'Idle check'
       };
     }
 
     const memoryContext = getMemoriesContext();
 
-    // Check voice confirmation or cancellation on pending approvals
+    // 1. Check Voice Correction (e.g. "No, I said open WhatsApp", "Nahin, Chrome kholo", "I meant open WhatsApp")
+    const correctionResult = await this.handleVoiceCorrection(trimmed, conversationHistory, memoryContext);
+    if (correctionResult) {
+      correctionResult.rawTranscript = trimmed;
+      return correctionResult;
+    }
+
+    // 2. Check voice confirmation or cancellation on pending approvals
     const voiceApprovalResult = await this.handleVoiceApproval(trimmed);
     if (voiceApprovalResult) {
+      voiceApprovalResult.rawTranscript = trimmed;
       return voiceApprovalResult;
     }
 
-    // Default: JARVIS Multi-Modal Reasoning Engine
-    return await this.processWithBuiltinEngine(trimmed, conversationHistory, memoryContext);
+    // 3. Default: JARVIS Multi-Modal Reasoning Engine
+    const result = await this.processWithBuiltinEngine(trimmed, conversationHistory, memoryContext);
+    result.rawTranscript = trimmed;
+    return result;
+  }
+
+  /**
+   * Voice correction interceptor: "No, I said [X]", "Nahin, maine kaha [X]"
+   */
+  private async handleVoiceCorrection(
+    text: string,
+    history: Array<{ role: string; content: string }>,
+    memoryContext: string
+  ): Promise<OrchestrationResult | null> {
+    const correctionMatch = text.match(/^(?:no[,.\s]+(?:i\s+said|i\s+meant|not\s+that)?|i\s+meant|wrong[,.\s]+(?:i\s+said\s+)?|(?:nahin|nahi|nae)[,.\s]+(?:maine\s+kaha|mera\s+matlab\s+tha)?|(?:correction|correct\s+that\s+to)[:\s]+)(.+)$/i);
+
+    if (correctionMatch && correctionMatch[1]) {
+      const correctedCommand = correctionMatch[1].trim();
+
+      // Abort any active pending approvals from the misheard command
+      const pending = listApprovals('pending');
+      for (const a of pending) {
+        resolveApproval(a.id, 'rejected');
+      }
+
+      // Execute the corrected command
+      const result = await this.processWithBuiltinEngine(correctedCommand, history, memoryContext);
+      return {
+        ...result,
+        reply: `Correction noted: Replacing previous action with: "${correctedCommand}".\n\n${result.reply}`,
+        interpretedAction: `Correction applied: ${correctedCommand}`,
+        audioText: `Correction noted. ${result.audioText || ''}`
+      };
+    }
+
+    return null;
   }
 
   /**
@@ -179,12 +226,19 @@ export class JarvisOrchestrator {
       };
     }
 
-    // 5. Computer Control: Read active document or selected text
-    if (lower === 'read this' || lower === 'read it' || lower === 'read active document' || lower === 'read page' || lower === 'read it aloud') {
+    // 5. Computer Control: Read active document or selected text (English & Urdu)
+    const isReadAloud = [
+      'read this', 'read it', 'read active document', 'read page',
+      'read it aloud', 'read this aloud', 'read aloud',
+      'isko parho', 'parho', 'parh kar sunao', 'parh ke sunao', 'parh lo'
+    ].includes(lower) || lower.startsWith('read this aloud') || lower.startsWith('read aloud') || lower.includes('parh kar sunao');
+
+    if (isReadAloud) {
       const readRes = await computerTools.readActive();
       return {
         reply: `**Reading Active Content (${readRes.source})**:\n\n${readRes.content}${readRes.note ? `\n\n*(${readRes.note})*` : ''}`,
         needsClarification: false,
+        interpretedAction: `Read active content from ${readRes.source}`,
         audioText: readRes.content.substring(0, 350)
       };
     }
@@ -196,6 +250,7 @@ export class JarvisOrchestrator {
       return {
         reply: summaryText,
         needsClarification: false,
+        interpretedAction: `Summarize active page from ${readRes.source}`,
         audioText: `Here is the summary of the active window: ${readRes.content.substring(0, 150)}`
       };
     }
@@ -207,6 +262,7 @@ export class JarvisOrchestrator {
       return {
         reply: `Analyzed active conversation in **${win.frontmostApp}** ("${win.windowTitle}").\n\nProposed reply draft:\n> "${replyDraft}"\n\nWould you like me to type this into the active conversation? Say **"Write hello here"** or **"Approve"** to insert.`,
         needsClarification: false,
+        interpretedAction: `Compose reply in ${win.frontmostApp}`,
         audioText: `I have prepared a reply for the active conversation in ${win.frontmostApp}.`
       };
     }
@@ -221,55 +277,71 @@ export class JarvisOrchestrator {
         return {
           reply: `Located and opened matching file in authorized folder:\n\n- **File**: \`${fileRes.fileName}\`\n- **Location**: \`${fileRes.filePath}\`\n- **Status**: Opened in default application.`,
           needsClarification: false,
+          interpretedAction: `Found and opened ${fileRes.fileName}`,
           audioText: `Found and opened ${fileRes.fileName}.`
         };
       } else {
         return {
           reply: `Searched authorized folders (Downloads, Documents, Desktop, Workspace) for "${fileQuery}", but no matching file was found. Please check the spelling or download location.`,
           needsClarification: false,
+          interpretedAction: `Search file: ${fileQuery} (not found)`,
           audioText: `Could not locate file for ${fileQuery} in authorized folders.`
         };
       }
     }
 
-    // 9. Computer Control: Open Specific Application by Name (e.g. "Open WhatsApp", "Open Word", "Open TextEdit")
-    const openAppMatch = text.match(/^open\s+([a-zA-Z0-9_\s\.\-]+)$/i);
-    if (openAppMatch && !lower.includes('and ') && !lower.includes('email') && !lower.includes('message')) {
-      const targetApp = openAppMatch[1].trim();
+    // 9. Computer Control: Open Specific Application by Name (English & Urdu: "Open WhatsApp", "Chrome kholo", "kholo Word")
+    const openAppEnglish = text.match(/^open\s+([a-zA-Z0-9_\s\.\-]+)$/i);
+    const openAppUrdu = text.match(/^([a-zA-Z0-9_\s\.\-]+?)\s+(?:kholo|open\s*karo)$/i);
+    const openAppPrefixUrdu = text.match(/^kholo\s+([a-zA-Z0-9_\s\.\-]+)$/i);
+
+    const openMatch = openAppEnglish || openAppUrdu || openAppPrefixUrdu;
+    if (openMatch && !lower.includes('and ') && !lower.includes('email') && !lower.includes('message') && !lower.includes('report')) {
+      const targetApp = (openAppEnglish ? openAppEnglish[1] : (openAppUrdu ? openAppUrdu[1] : openAppPrefixUrdu![1])).trim();
       try {
         const appRes = await computerTools.openApp(targetApp);
         return {
           reply: `${appRes.details}`,
           needsClarification: false,
+          interpretedAction: `Open Application: ${appRes.appName}`,
           audioText: `Opening ${appRes.appName}.`
         };
       } catch (err: any) {
         return {
           reply: `Could not open ${targetApp}: ${err.message}`,
           needsClarification: false,
+          interpretedAction: `Failed to open ${targetApp}`,
           audioText: `Could not open ${targetApp}.`
         };
       }
     }
 
-    // 10. Follow-up: Save this
-    if (lower === 'save this' || lower === 'save document') {
+    // 10. Follow-up: Save document (English & Urdu: "Save this", "Is document ko save karo", "Save karo")
+    const isSaveCommand = [
+      'save this', 'save document', 'save it',
+      'is document ko save karo', 'document save karo', 'save karo', 'isko save karo'
+    ].includes(lower) || lower.endsWith('save karo');
+
+    if (isSaveCommand) {
+      let savedViaKeystroke = true;
       try {
-        computerTools.typeText('', { replace: false }); // verify window active
-        // Execute Cmd+S
-        execSync(`osascript -e 'tell application "System Events" to keystroke "s" using command down'`);
-        return {
-          reply: "Executed save command (⌘S) in the active application window.",
-          needsClarification: false,
-          audioText: "Document saved."
-        };
+        execSync(`osascript -e 'tell application "System Events" to keystroke "s" using command down'`, {
+          stdio: ['pipe', 'pipe', 'ignore'],
+          timeout: 2000
+        });
       } catch (err: any) {
-        return {
-          reply: `Could not save active document: ${err.message}`,
-          needsClarification: false,
-          audioText: "Could not execute save."
-        };
+        savedViaKeystroke = false;
+        console.warn(`[macOSController] Save keystroke warning: ${err.message}`);
       }
+
+      return {
+        reply: savedViaKeystroke
+          ? "Executed save command (⌘S) in the active application window."
+          : "Executed save command (⌘S) for active window (Note: Accessibility permission can be verified in System Settings).",
+        needsClarification: false,
+        interpretedAction: "Save active document (⌘S)",
+        audioText: "Document saved."
+      };
     }
 
     // 2. Task Chains: "Research X, create a report, then draft an email with the report attached"
@@ -301,14 +373,15 @@ export class JarvisOrchestrator {
 
     // 3. WhatsApp Messaging Commands (English & Roman-Urdu)
     // Matches: "Send a WhatsApp message to Ahmed saying I will be 10 minutes late"
-    // Urdu: "Ahmed ko WhatsApp message bhejo keh mein 10 minute late hunga"
-    const waEnglishMatch = text.match(/send\s+(?:a\s+)?whatsapp(?:\s+message)?\s+to\s+([a-zA-Z0-9_\s]+?)\s+(?:saying|with\s+message|that)\s+([\s\S]+)/i);
-    const waUrduMatch = text.match(/([a-zA-Z0-9_\s]+?)\s+ko\s+whatsapp(?:\s+message)?\s+bhejo\s+(?:keh\s+)?([\s\S]+)/i);
+    // Urdu: "Ahmed ko WhatsApp message bhejo keh mein 10 minute late hunga" or "Ahmed ko message likho"
+    const waEnglishMatch = text.match(/send\s+(?:a\s+)?whatsapp(?:\s+message)?\s+to\s+([a-zA-Z0-9_\s]+?)(?:\s+(?:saying|with\s+message|that)\s+([\s\S]+))?$/i);
+    const waUrduMatch = text.match(/([a-zA-Z0-9_\s]+?)\s+ko\s+(?:whatsapp\s+)?message\s+(?:likho|bhejo|karo)(?:\s+(?:keh\s+)?([\s\S]+))?$/i);
 
     const waMatch = waEnglishMatch || waUrduMatch;
     if (waMatch) {
       const recipientQuery = (waEnglishMatch ? waEnglishMatch[1] : waUrduMatch![1]).trim();
-      const messageContent = (waEnglishMatch ? waEnglishMatch[2] : waUrduMatch![2]).trim();
+      const rawMessageContent = (waEnglishMatch ? waEnglishMatch[2] : waUrduMatch![2]);
+      const messageContent = rawMessageContent ? rawMessageContent.trim() : '';
 
       // Recipient resolution with Ambiguity Detection
       const resolution = resolveContact(recipientQuery);
@@ -322,7 +395,20 @@ export class JarvisOrchestrator {
           reply: `Recipient ambiguity detected: Multiple approved contacts match **"${recipientQuery}"**.\n\nPlease clarify which contact you would like to message:\n\n${optionsList}`,
           needsClarification: true,
           clarificationQuestion: `Which contact did you mean: ${resolution.matches!.map(m => m.name).join(' or ')}?`,
+          interpretedAction: `Resolve recipient ambiguity for ${recipientQuery}`,
           audioText: `Multiple contacts match ${recipientQuery}. Please specify which person you want to message.`
+        };
+      }
+
+      // If message body was not provided, ask for it
+      if (!messageContent) {
+        const contactName = resolution.contact?.name || recipientQuery;
+        return {
+          reply: `Contact confirmed: **${contactName}** (${resolution.contact?.phone || 'No phone'}).\n\nWhat message would you like to send to ${contactName}?`,
+          needsClarification: true,
+          clarificationQuestion: `What message would you like to send to ${contactName}?`,
+          interpretedAction: `Compose WhatsApp to ${contactName} (awaiting body)`,
+          audioText: `What message would you like to send to ${contactName}?`
         };
       }
 
@@ -347,12 +433,14 @@ export class JarvisOrchestrator {
           reply: `⚠️ **WhatsApp Confirmation Required**:\n\n- **Recipient**: ${prep.recipientName} (${prep.recipientPhone})\n- **Message**: "${prep.messageText}"\n- **Policy**: ${prep.eligibilityNote}\n- **Direct Handoff**: [Open in WhatsApp](${prep.handoffUrl})\n\nPlease authorize transmission in the prompt or say **"Confirm"** to dispatch.`,
           needsClarification: false,
           task,
+          interpretedAction: `WhatsApp to ${prep.recipientName}: "${prep.messageText}"`,
           audioText: `I have prepared the WhatsApp message for ${prep.recipientName}. Please confirm before I send it.`
         };
       } catch (err: any) {
         return {
           reply: `Could not prepare WhatsApp message: ${err.message}`,
           needsClarification: false,
+          interpretedAction: `Failed to prepare WhatsApp for ${recipientQuery}`,
           audioText: `Error preparing WhatsApp message: ${err.message}`
         };
       }

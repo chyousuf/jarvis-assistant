@@ -1,6 +1,5 @@
-import React from 'react';
-import { Mic, MicOff, Volume2, VolumeX, Square, Shield, Radio, Sparkles, Languages, Monitor } from 'lucide-react';
-import { VoiceState } from '../services/voice.js';
+import { Mic, MicOff, Volume2, VolumeX, Square, Shield, Radio, Sparkles, Languages, Monitor, Sliders } from 'lucide-react';
+import { VoiceState, LanguageMode } from '../services/voice.js';
 
 export type ActiveTab = 'chat' | 'tasks' | 'computer' | 'emails' | 'whatsapp' | 'calendar' | 'workspace' | 'reminders' | 'connections' | 'activity';
 
@@ -16,8 +15,10 @@ interface HeaderProps {
   onToggleWakeWord: () => void;
   isListening: boolean;
   onToggleListening: () => void;
-  language: 'en-US' | 'ur-PK';
+  language: LanguageMode;
   onToggleLanguage: () => void;
+  onOpenDiagnostics?: () => void;
+  audioLevel?: number;
   serverOnline: boolean;
   activeTaskCount: number;
 }
@@ -36,6 +37,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleListening,
   language,
   onToggleLanguage,
+  onOpenDiagnostics,
+  audioLevel = 0,
   serverOnline,
   activeTaskCount
 }) => {
@@ -181,15 +184,26 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Voice and Audio HUD Controls */}
         <div className="flex items-center gap-2">
-          {/* Language Toggle (English vs Urdu) */}
+          {/* Language Toggle (Auto vs English vs Urdu) */}
           <button
             onClick={onToggleLanguage}
-            title="Toggle Voice Recognition Language (English / Urdu)"
+            title="Toggle Voice Recognition Language (Auto / English / Urdu)"
             className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 hover:text-cyan-400 text-xs font-mono border border-slate-700 transition-all"
           >
             <Languages className="w-3.5 h-3.5 text-cyan-400" />
-            <span>{language === 'en-US' ? 'EN' : 'UR'}</span>
+            <span>{language === 'auto' ? 'AUTO' : (language === 'en-US' ? 'EN' : 'UR')}</span>
           </button>
+
+          {/* Microphone Diagnostics / Audio Settings */}
+          {onOpenDiagnostics && (
+            <button
+              onClick={onOpenDiagnostics}
+              title="Microphone Selector & Audio Diagnostics"
+              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-cyan-400 transition-all"
+            >
+              <Sliders className="w-3.5 h-3.5" />
+            </button>
+          )}
 
           {/* Push-to-Talk / Listening Toggle */}
           <button
@@ -203,6 +217,9 @@ export const Header: React.FC<HeaderProps> = ({
           >
             {isListening ? <Mic className="w-3.5 h-3.5 text-rose-400" /> : <Mic className="w-3.5 h-3.5 text-cyan-400" />}
             <span>{isListening ? 'Listening...' : 'Voice'}</span>
+            {isListening && audioLevel > 0 && (
+              <span className="w-1.5 h-3 bg-emerald-400 rounded-sm animate-pulse ml-0.5" style={{ height: `${Math.max(4, Math.min(16, audioLevel / 6))}px` }} />
+            )}
           </button>
 
           {/* Universal Emergency Stop (RUKO) */}

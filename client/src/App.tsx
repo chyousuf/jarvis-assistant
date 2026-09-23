@@ -10,8 +10,10 @@ import { RemindersModal } from './components/RemindersModal.js';
 import { ConnectionsModal } from './components/ConnectionsModal.js';
 import { ActivityLogModal } from './components/ActivityLogModal.js';
 import { ComputerControlModal } from './components/ComputerControlModal.js';
+import { AudioDiagnosticsModal } from './components/AudioDiagnosticsModal.js';
+import { VoiceReviewBar } from './components/VoiceReviewBar.js';
 import { api, Message, Task, Approval } from './services/api.js';
-import { voiceService, VoiceState } from './services/voice.js';
+import { voiceService, VoiceState, LanguageMode, TranscriptResult } from './services/voice.js';
 import { Bell, X } from 'lucide-react';
 
 export const App: React.FC = () => {
@@ -29,7 +31,13 @@ export const App: React.FC = () => {
   const [wakeWordEnabled, setWakeWordEnabled] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState('');
-  const [language, setLanguage] = useState<'en-US' | 'ur-PK'>('en-US');
+  const [language, setLanguage] = useState<LanguageMode>(() => voiceService.getLanguage());
+  const [audioLevel, setAudioLevel] = useState<number>(0);
+  const [isDiagnosticsOpen, setIsDiagnosticsOpen] = useState(false);
+  const [reviewTranscript, setReviewTranscript] = useState<string | null>(null);
+  const [reviewConfidence, setReviewConfidence] = useState<number | undefined>(undefined);
+  const [reviewIsCorrection, setReviewIsCorrection] = useState(false);
+  const [reviewBeforeExecuting, setReviewBeforeExecuting] = useState(true);
 
   // Active reminder alert banner
   const [activeAlert, setActiveAlert] = useState<{ id: string; title: string; due_at: string } | null>(null);
@@ -40,13 +48,19 @@ export const App: React.FC = () => {
     api.getTasks().then(setTasks).catch(() => {});
     api.getPendingApprovals().then(setPendingApprovals).catch(() => {});
 
-    // Setup Voice Callbacks
+    // Setup Voice Callbacks with VAD and Review Gate
     voiceService.setCallbacks(
-      (text: string, isFinal: boolean) => {
-        setVoiceTranscript(text);
-        if (isFinal && text.trim()) {
-          handleSendMessage(text.trim());
-          setVoiceTranscript('');
+      (result: TranscriptResult) => {
+        setVoiceTranscript(result.text);
+        if (result.isFinal && result.text.trim()) {
+          if (reviewBeforeExecuting) {
+            setReviewTranscript(result.text.trim());
+            setReviewConfidence(result.confidence);
+            setReviewIsCorrection(!!result.isCorrection);
+          } else {
+            handleSendMessage(result.text.trim());
+            setVoiceTranscript('');
+          }
           if (!wakeWordEnabled) {
             voiceService.stopListening();
             setIsListening(false);
@@ -56,6 +70,9 @@ export const App: React.FC = () => {
       (state: VoiceState) => {
         setVoiceState(state);
         setIsListening(state === 'listening');
+      },
+      (level: number) => {
+        setAudioLevel(level);
       }
     );
 
@@ -190,9 +207,32 @@ export const App: React.FC = () => {
   };
 
   const handleToggleLanguage = () => {
-    const nextLang = language === 'en-US' ? 'ur-PK' : 'en-US';
+    const nextLang: LanguageMode = language === 'auto' ? 'en-US' : (language === 'en-US' ? 'ur-PK' : 'auto');
     setLanguage(nextLang);
     voiceService.setLanguage(nextLang);
+  };
+
+  const handleLanguageChange = (nextLang: LanguageMode) => {
+    setLanguage(nextLang);
+    voiceService.setLanguage(nextLang);
+  };
+
+  const handleExecuteReview = (text: string) => {
+    setReviewTranscript(null);
+    setVoiceTranscript('');
+    handleSendMessage(text);
+  };
+
+  const handleTryAgainReview = () => {
+    setReviewTranscript(null);
+    setVoiceTranscript('');
+    voiceService.startListening();
+    setIsListening(true);
+  };
+
+  const handleCancelReview = () => {
+    setReviewTranscript(null);
+    setVoiceTranscript('');
   };
 
   // Task & Approval Handlers
@@ -234,6 +274,8 @@ export const App: React.FC = () => {
         onToggleListening={handleToggleListening}
         language={language}
         onToggleLanguage={handleToggleLanguage}
+        onOpenDiagnostics={() => setIsDiagnosticsOpen(true)}
+        audioLevel={audioLevel}
         serverOnline={serverOnline}
         activeTaskCount={runningTasksCount}
       />
@@ -290,6 +332,24 @@ export const App: React.FC = () => {
         {activeTab === 'connections' && <ConnectionsModal />}
         {activeTab === 'activity' && <ActivityLogModal />}
       </main>
+
+      <AudioDiagnosticsModal
+        isOpen={isDiagnosticsOpen}
+        onClose={() => setIsDiagnosticsOpen(false)}
+        language={language}
+        onLanguageChange={handleLanguageChange}
+      />
+
+      {reviewTranscript && (
+        <VoiceReviewBar
+          transcript={reviewTranscript}
+          confidence={reviewConfidence}
+          isCorrection={reviewIsCorrection}
+          onExecute={handleExecuteReview}
+          onTryAgain={handleTryAgainReview}
+          onCancel={handleCancelReview}
+        />
+      )}
     </div>
   );
 };

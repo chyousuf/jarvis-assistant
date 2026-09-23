@@ -14,6 +14,7 @@ import whatsappRouter from './routes/whatsapp.js';
 import calendarRouter from './routes/calendar.js';
 import oauthRouter from './routes/oauth.js';
 import computerRouter from './routes/computer.js';
+import voiceRouter from './routes/voice.js';
 import { subscribeToTaskEvents } from './tasks/taskRunner.js';
 import { pollDueReminders } from './tools/reminders.js';
 
@@ -55,6 +56,7 @@ app.use('/api/whatsapp', whatsappRouter);
 app.use('/api/calendar', calendarRouter);
 app.use('/api/oauth', oauthRouter);
 app.use('/api/computer', computerRouter);
+app.use('/api/voice', voiceRouter);
 
 // Server-Sent Events (SSE) for Real-Time Telemetry & Progress
 const sseClients = new Set<Response>();
