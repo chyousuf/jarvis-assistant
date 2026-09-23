@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Header, ActiveTab } from './components/Header.js';
+import { Sidebar } from './components/Sidebar.js';
 import { ChatInterface } from './components/ChatInterface.js';
 import { TaskDashboard } from './components/TaskDashboard.js';
 import { EmailDashboard } from './components/EmailDashboard.js';
@@ -24,6 +25,8 @@ export const App: React.FC = () => {
   const [pendingApprovals, setPendingApprovals] = useState<Approval[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [serverOnline, setServerOnline] = useState(true);
+  const [companionConnected, setCompanionConnected] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Voice state
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
@@ -41,6 +44,21 @@ export const App: React.FC = () => {
 
   // Active reminder alert banner
   const [activeAlert, setActiveAlert] = useState<{ id: string; title: string; due_at: string } | null>(null);
+
+  // Check companion status periodically
+  useEffect(() => {
+    const checkCompanion = async () => {
+      try {
+        const status = await api.getComputerStatus();
+        setCompanionConnected(!!status.companionConnected);
+      } catch {
+        setCompanionConnected(false);
+      }
+    };
+    checkCompanion();
+    const interval = setInterval(checkCompanion, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Load initial data
   useEffect(() => {
@@ -129,57 +147,102 @@ export const App: React.FC = () => {
 
   // Send message
   const handleSendMessage = async (text: string) => {
-    setIsLoading(true);
-    try {
-      const tempUserMsg: Message = {
-        id: `temp-${Date.now()}`,
-        conversation_id: 'default',
-        sender: 'user',
-        content: text,
-        created_at: new Date().toISOString()
-      };
-      setMessages((prev) => [...prev, tempUserMsg]);
+    if (!text.trim()) return;
 
+    const userMessage: Message = {
+      id: `usr-${Date.now().toString(36)}`,
+      conversation_id: 'default',
+      sender: 'user',
+      content: text,
+      created_at: new Date().toISOString()
+    };
+
+    setMessages((prev) => [...prev, userMessage]);
+    setIsLoading(true);
+
+    try {
       const response = await api.sendMessage(text);
 
-      const jarvisMsg: Message = {
-        id: response.messageId || `jarvis-${Date.now()}`,
+      const assistantMessage: Message = {
+        id: response.messageId || `jarvis-${Date.now().toString(36)}`,
         conversation_id: 'default',
         sender: 'jarvis',
         content: response.reply,
-        tool_calls: response.task,
+        tool_calls: response.task ? [response.task] : undefined,
         created_at: new Date().toISOString()
       };
 
-      setMessages((prev) => [...prev, jarvisMsg]);
+      setMessages((prev) => [...prev, assistantMessage]);
 
       if (response.task) {
         setActiveTask(response.task);
         api.getTasks().then(setTasks);
       }
 
+      // Spoken response
       if (!isMuted && response.audioText) {
         voiceService.speak(response.audioText);
       }
 
       api.getPendingApprovals().then(setPendingApprovals);
-
     } catch (err: any) {
-      console.error(err);
-      const errMsg: Message = {
-        id: `err-${Date.now()}`,
+      console.error('Send message error:', err);
+      const errorMessage: Message = {
+        id: `err-${Date.now().toString(36)}`,
         conversation_id: 'default',
-        sender: 'jarvis',
-        content: `Operational error: ${err.message || 'Could not communicate with JARVIS Core.'}`,
+        sender: 'system',
+        content: `Operational notice: ${err?.message || 'Failed to communicate with JARVIS engine.'}`,
         created_at: new Date().toISOString()
       };
-      setMessages((prev) => [...prev, errMsg]);
+      setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Voice Handlers
+  // Voice Review handlers
+  const handleExecuteReview = (finalText: string) => {
+    setReviewTranscript(null);
+    setVoiceTranscript('');
+    handleSendMessage(finalText);
+  };
+
+  const handleTryAgainReview = () => {
+    setReviewTranscript(null);
+    setVoiceTranscript('');
+    handleToggleListening();
+  };
+
+  const handleCancelReview = () => {
+    setReviewTranscript(null);
+    setVoiceTranscript('');
+  };
+
+  // Approval handler
+  const handleResolveApproval = async (id: string, decision: 'approved' | 'rejected') => {
+    try {
+      await api.resolveApproval(id, decision);
+      setPendingApprovals((prev) => prev.filter((a) => a.id !== id));
+      api.getTasks().then(setTasks);
+    } catch (err: any) {
+      alert(`Approval error: ${err.message}`);
+    }
+  };
+
+  // Cancel Task
+  const handleCancelTask = async (id: string) => {
+    try {
+      await api.cancelTask(id);
+      if (activeTask?.id === id) {
+        setActiveTask(null);
+      }
+      api.getTasks().then(setTasks);
+    } catch (err: any) {
+      alert(`Cancel error: ${err.message}`);
+    }
+  };
+
+  // Voice Controls
   const handleToggleListening = () => {
     if (isListening) {
       voiceService.stopListening();
@@ -191,9 +254,7 @@ export const App: React.FC = () => {
   };
 
   const handleToggleMute = () => {
-    const nextMuted = !isMuted;
-    setIsMuted(nextMuted);
-    voiceService.setMuted(nextMuted);
+    setIsMuted((prev) => !prev);
   };
 
   const handleStopSpeaking = () => {
@@ -201,62 +262,31 @@ export const App: React.FC = () => {
   };
 
   const handleToggleWakeWord = () => {
-    const next = !wakeWordEnabled;
-    setWakeWordEnabled(next);
-    voiceService.setWakeWordEnabled(next);
-  };
-
-  const handleToggleLanguage = () => {
-    const nextLang: LanguageMode = language === 'auto' ? 'en-US' : (language === 'en-US' ? 'ur-PK' : 'auto');
-    setLanguage(nextLang);
-    voiceService.setLanguage(nextLang);
-  };
-
-  const handleLanguageChange = (nextLang: LanguageMode) => {
-    setLanguage(nextLang);
-    voiceService.setLanguage(nextLang);
-  };
-
-  const handleExecuteReview = (text: string) => {
-    setReviewTranscript(null);
-    setVoiceTranscript('');
-    handleSendMessage(text);
-  };
-
-  const handleTryAgainReview = () => {
-    setReviewTranscript(null);
-    setVoiceTranscript('');
-    voiceService.startListening();
-    setIsListening(true);
-  };
-
-  const handleCancelReview = () => {
-    setReviewTranscript(null);
-    setVoiceTranscript('');
-  };
-
-  // Task & Approval Handlers
-  const handleCancelTask = async (id: string) => {
-    await api.cancelTask(id);
-    const updated = await api.getTasks();
-    setTasks(updated);
-    if (activeTask?.id === id) {
-      setActiveTask(null);
+    const nextState = !wakeWordEnabled;
+    setWakeWordEnabled(nextState);
+    if (nextState) {
+      voiceService.startListening();
+      setIsListening(true);
+    } else {
+      voiceService.stopListening();
+      setIsListening(false);
     }
   };
 
-  const handleResolveApproval = async (id: string, decision: 'approved' | 'rejected') => {
-    await api.resolveApproval(id, decision);
-    const pending = await api.getPendingApprovals();
-    setPendingApprovals(pending);
-    const updated = await api.getTasks();
-    setTasks(updated);
+  const handleToggleLanguage = () => {
+    const nextLang: LanguageMode = language === 'auto' ? 'en-US' : language === 'en-US' ? 'ur-PK' : 'auto';
+    handleLanguageChange(nextLang);
   };
 
-  const runningTasksCount = tasks.filter((t) => t.status === 'running').length;
+  const handleLanguageChange = (newLang: LanguageMode) => {
+    setLanguage(newLang);
+    voiceService.setLanguage(newLang);
+  };
+
+  const runningTasksCount = tasks.filter((t) => t.status === 'running' || t.status === 'pending').length;
 
   return (
-    <div className="min-h-screen bg-[#080d1a] text-slate-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       <Header
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -278,6 +308,8 @@ export const App: React.FC = () => {
         audioLevel={audioLevel}
         serverOnline={serverOnline}
         activeTaskCount={runningTasksCount}
+        companionConnected={companionConnected}
+        onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
       />
 
       {activeAlert && (
@@ -298,40 +330,52 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      <main className="flex-1">
-        {activeTab === 'chat' && (
-          <ChatInterface
-            messages={messages}
-            onSendMessage={handleSendMessage}
-            isLoading={isLoading}
-            activeTask={activeTask}
-            pendingApprovals={pendingApprovals}
-            onResolveApproval={handleResolveApproval}
-            onCancelTask={handleCancelTask}
-            voiceState={voiceState}
-            isListening={isListening}
-            onToggleListening={handleToggleListening}
-            voiceTranscript={voiceTranscript}
-          />
-        )}
+      {/* Main Container with Sidebar & Content */}
+      <div className="flex-1 flex overflow-hidden">
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          activeTaskCount={runningTasksCount}
+          companionConnected={companionConnected}
+          isOpen={isSidebarOpen}
+          onClose={() => setIsSidebarOpen(false)}
+        />
 
-        {activeTab === 'tasks' && (
-          <TaskDashboard
-            tasks={tasks}
-            onCancelTask={handleCancelTask}
-            onRefresh={() => api.getTasks().then(setTasks)}
-          />
-        )}
+        <main className="flex-1 overflow-y-auto bg-slate-950">
+          {activeTab === 'chat' && (
+            <ChatInterface
+              messages={messages}
+              onSendMessage={handleSendMessage}
+              isLoading={isLoading}
+              activeTask={activeTask}
+              pendingApprovals={pendingApprovals}
+              onResolveApproval={handleResolveApproval}
+              onCancelTask={handleCancelTask}
+              voiceState={voiceState}
+              isListening={isListening}
+              onToggleListening={handleToggleListening}
+              voiceTranscript={voiceTranscript}
+            />
+          )}
 
-        {activeTab === 'computer' && <ComputerControlModal />}
-        {activeTab === 'emails' && <EmailDashboard />}
-        {activeTab === 'whatsapp' && <WhatsAppDashboard />}
-        {activeTab === 'calendar' && <CalendarDashboard />}
-        {activeTab === 'workspace' && <WorkspaceModal />}
-        {activeTab === 'reminders' && <RemindersModal />}
-        {activeTab === 'connections' && <ConnectionsModal />}
-        {activeTab === 'activity' && <ActivityLogModal />}
-      </main>
+          {activeTab === 'tasks' && (
+            <TaskDashboard
+              tasks={tasks}
+              onCancelTask={handleCancelTask}
+              onRefresh={() => api.getTasks().then(setTasks)}
+            />
+          )}
+
+          {activeTab === 'computer' && <ComputerControlModal />}
+          {activeTab === 'emails' && <EmailDashboard />}
+          {activeTab === 'whatsapp' && <WhatsAppDashboard />}
+          {activeTab === 'calendar' && <CalendarDashboard />}
+          {activeTab === 'workspace' && <WorkspaceModal />}
+          {activeTab === 'reminders' && <RemindersModal />}
+          {activeTab === 'connections' && <ConnectionsModal />}
+          {activeTab === 'activity' && <ActivityLogModal />}
+        </main>
+      </div>
 
       <AudioDiagnosticsModal
         isOpen={isDiagnosticsOpen}

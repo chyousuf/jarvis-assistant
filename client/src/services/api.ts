@@ -144,6 +144,8 @@ export interface ActiveWindowInfo {
 
 export interface ComputerStatus {
   success: boolean;
+  companionConnected: boolean;
+  isLocalCompanion?: boolean;
   os: {
     platform: string;
     isMacOS: boolean;
@@ -158,280 +160,442 @@ export interface ComputerStatus {
 }
 
 export const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '') + '/api';
+export const COMPANION_URL = 'http://127.0.0.1:4001';
+
+export function getCompanionToken(): string {
+  return localStorage.getItem('jarvis_companion_token') || '';
+}
+
+export function setCompanionToken(token: string) {
+  if (token) {
+    localStorage.setItem('jarvis_companion_token', token.trim());
+  } else {
+    localStorage.removeItem('jarvis_companion_token');
+  }
+}
+
+/**
+ * Resilient JSON fetch helper that inspects status, validates Content-Type,
+ * and guards against HTML/empty responses that cause "Unexpected end of JSON input".
+ */
+export async function fetchJson<T = any>(url: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers || {});
+  if (!headers.has('Content-Type') && options.body && typeof options.body === 'string') {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(url, { ...options, headers });
+  } catch (netErr: any) {
+    throw new Error(`Network connection error: ${netErr.message || 'Server unreachable'}`);
+  }
+
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    const text = await res.text().catch(() => '');
+    if (!res.ok) {
+      throw new Error(`Server returned error ${res.status}: ${res.statusText}`);
+    }
+    // Received HTML or non-JSON
+    throw new Error(`API returned unexpected response format (${res.status} ${res.statusText}).`);
+  }
+
+  let data: any;
+  try {
+    data = await res.json();
+  } catch (parseErr: any) {
+    throw new Error(`Failed to parse JSON response: ${parseErr.message}`);
+  }
+
+  if (!res.ok) {
+    throw new Error(data?.error || `HTTP ${res.status}: ${res.statusText}`);
+  }
+
+  return data as T;
+}
 
 export const api = {
   // Chat
   async sendMessage(message: string, conversationId = 'default') {
-    const res = await fetch(`${API_BASE}/chat`, {
+    return fetchJson(`${API_BASE}/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, conversationId })
     });
-    return res.json();
   },
 
   async getHistory(conversationId = 'default'): Promise<Message[]> {
-    const res = await fetch(`${API_BASE}/chat/history?conversationId=${conversationId}`);
-    const data = await res.json();
-    return data.messages || [];
+    try {
+      const data = await fetchJson<{ success: boolean; messages: Message[] }>(
+        `${API_BASE}/chat/history?conversationId=${conversationId}`
+      );
+      return data.messages || [];
+    } catch {
+      return [];
+    }
   },
 
   async clearHistory(conversationId = 'default') {
-    const res = await fetch(`${API_BASE}/chat/history?conversationId=${conversationId}`, {
+    return fetchJson(`${API_BASE}/chat/history?conversationId=${conversationId}`, {
       method: 'DELETE'
     });
-    return res.json();
   },
 
   // Tasks
   async getTasks(status?: string): Promise<Task[]> {
-    const url = status && status !== 'all' ? `${API_BASE}/tasks?status=${status}` : `${API_BASE}/tasks`;
-    const res = await fetch(url);
-    const data = await res.json();
-    return data.tasks || [];
+    try {
+      const url = status && status !== 'all' ? `${API_BASE}/tasks?status=${status}` : `${API_BASE}/tasks`;
+      const data = await fetchJson<{ success: boolean; tasks: Task[] }>(url);
+      return data.tasks || [];
+    } catch {
+      return [];
+    }
   },
 
   async cancelTask(id: string) {
-    const res = await fetch(`${API_BASE}/tasks/${id}/cancel`, { method: 'POST' });
-    return res.json();
+    return fetchJson(`${API_BASE}/tasks/${id}/cancel`, { method: 'POST' });
   },
 
   // Approvals
   async getPendingApprovals(): Promise<Approval[]> {
-    const res = await fetch(`${API_BASE}/tasks/approvals/pending`);
-    const data = await res.json();
-    return data.approvals || [];
+    try {
+      const data = await fetchJson<{ success: boolean; approvals: Approval[] }>(`${API_BASE}/tasks/approvals/pending`);
+      return data.approvals || [];
+    } catch {
+      return [];
+    }
   },
 
   async resolveApproval(id: string, decision: 'approved' | 'rejected') {
-    const res = await fetch(`${API_BASE}/tasks/approvals/${id}/resolve`, {
+    return fetchJson(`${API_BASE}/tasks/approvals/${id}/resolve`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ decision })
     });
-    return res.json();
   },
 
   // Contacts
   async getContacts(): Promise<Contact[]> {
-    const res = await fetch(`${API_BASE}/contacts`);
-    const data = await res.json();
-    return data.contacts || [];
+    try {
+      const data = await fetchJson<{ success: boolean; contacts: Contact[] }>(`${API_BASE}/contacts`);
+      return data.contacts || [];
+    } catch {
+      return [];
+    }
   },
 
   async addContact(name: string, email?: string, phone?: string, company?: string) {
-    const res = await fetch(`${API_BASE}/contacts`, {
+    return fetchJson(`${API_BASE}/contacts`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, email, phone, company })
     });
-    return res.json();
   },
 
   // Emails
   async getEmails(status?: string): Promise<EmailRecord[]> {
-    const url = status ? `${API_BASE}/emails?status=${status}` : `${API_BASE}/emails`;
-    const res = await fetch(url);
-    const data = await res.json();
-    return data.emails || [];
+    try {
+      const url = status ? `${API_BASE}/emails?status=${status}` : `${API_BASE}/emails`;
+      const data = await fetchJson<{ success: boolean; emails: EmailRecord[] }>(url);
+      return data.emails || [];
+    } catch {
+      return [];
+    }
   },
 
   async createDraft(to: string, subject: string, body: string, attachments: string[] = []) {
-    const res = await fetch(`${API_BASE}/emails/draft`, {
+    return fetchJson(`${API_BASE}/emails/draft`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ to, subject, body, attachments })
     });
-    return res.json();
   },
 
   async sendEmail(draftId: string) {
-    const res = await fetch(`${API_BASE}/emails/${draftId}/send`, {
+    return fetchJson(`${API_BASE}/emails/${draftId}/send`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({})
     });
-    return res.json();
   },
 
   // WhatsApp
   async getWhatsAppMessages(status?: string): Promise<WhatsAppRecord[]> {
-    const url = status ? `${API_BASE}/whatsapp?status=${status}` : `${API_BASE}/whatsapp`;
-    const res = await fetch(url);
-    const data = await res.json();
-    return data.messages || [];
+    try {
+      const url = status ? `${API_BASE}/whatsapp?status=${status}` : `${API_BASE}/whatsapp`;
+      const data = await fetchJson<{ success: boolean; messages: WhatsAppRecord[] }>(url);
+      return data.messages || [];
+    } catch {
+      return [];
+    }
   },
 
   async prepareWhatsApp(recipient: string, message: string, templateName?: string) {
-    const res = await fetch(`${API_BASE}/whatsapp/prepare`, {
+    return fetchJson(`${API_BASE}/whatsapp/prepare`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ recipient, message, templateName })
     });
-    return res.json();
   },
 
   async sendWhatsApp(messageId: string) {
-    const res = await fetch(`${API_BASE}/whatsapp/${messageId}/send`, {
+    return fetchJson(`${API_BASE}/whatsapp/${messageId}/send`, {
       method: 'POST'
     });
-    return res.json();
   },
 
   // Calendar
   async getCalendarEvents(): Promise<CalendarRecord[]> {
-    const res = await fetch(`${API_BASE}/calendar`);
-    const data = await res.json();
-    return data.events || [];
+    try {
+      const data = await fetchJson<{ success: boolean; events: CalendarRecord[] }>(`${API_BASE}/calendar`);
+      return data.events || [];
+    } catch {
+      return [];
+    }
   },
 
   async checkAvailability(date: string) {
-    const res = await fetch(`${API_BASE}/calendar/availability?date=${encodeURIComponent(date)}`);
-    return res.json();
+    return fetchJson(`${API_BASE}/calendar/availability?date=${encodeURIComponent(date)}`);
   },
 
   async createCalendarEvent(title: string, startTime: string, attendees?: string[], description?: string) {
-    const res = await fetch(`${API_BASE}/calendar/events`, {
+    return fetchJson(`${API_BASE}/calendar/events`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title, startTime, attendees, description })
     });
-    return res.json();
   },
 
   // Memory
   async getMemories(): Promise<Memory[]> {
-    const res = await fetch(`${API_BASE}/memory`);
-    const data = await res.json();
-    return data.memories || [];
+    try {
+      const data = await fetchJson<{ success: boolean; memories: Memory[] }>(`${API_BASE}/memory`);
+      return data.memories || [];
+    } catch {
+      return [];
+    }
   },
 
   async saveMemory(key: string, value: string, category = 'preference') {
-    const res = await fetch(`${API_BASE}/memory`, {
+    return fetchJson(`${API_BASE}/memory`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key, value, category })
     });
-    return res.json();
   },
 
   async deleteMemory(idOrKey: string) {
-    const res = await fetch(`${API_BASE}/memory/${encodeURIComponent(idOrKey)}`, {
+    return fetchJson(`${API_BASE}/memory/${encodeURIComponent(idOrKey)}`, {
       method: 'DELETE'
     });
-    return res.json();
   },
 
   // Workspace Files
   async getWorkspaceFiles(): Promise<WorkspaceFile[]> {
-    const res = await fetch(`${API_BASE}/files`);
-    const data = await res.json();
-    return data.files || [];
+    try {
+      const data = await fetchJson<{ success: boolean; files: WorkspaceFile[] }>(`${API_BASE}/files`);
+      return data.files || [];
+    } catch {
+      return [];
+    }
   },
 
   async getFileContent(filePath: string): Promise<string> {
-    const res = await fetch(`${API_BASE}/files/content?path=${encodeURIComponent(filePath)}`);
-    const data = await res.json();
-    return data.file?.content || '';
+    try {
+      const data = await fetchJson<{ success: boolean; file?: { content: string } }>(
+        `${API_BASE}/files/content?path=${encodeURIComponent(filePath)}`
+      );
+      return data.file?.content || '';
+    } catch {
+      return '';
+    }
   },
 
   // Reminders
   async getReminders(status?: string): Promise<Reminder[]> {
-    const url = status ? `${API_BASE}/reminders?status=${status}` : `${API_BASE}/reminders`;
-    const res = await fetch(url);
-    const data = await res.json();
-    return data.reminders || [];
+    try {
+      const url = status ? `${API_BASE}/reminders?status=${status}` : `${API_BASE}/reminders`;
+      const data = await fetchJson<{ success: boolean; reminders: Reminder[] }>(url);
+      return data.reminders || [];
+    } catch {
+      return [];
+    }
   },
 
   async createReminder(title: string, dueAt: string) {
-    const res = await fetch(`${API_BASE}/reminders`, {
+    return fetchJson(`${API_BASE}/reminders`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title, dueAt })
     });
-    return res.json();
   },
 
   async cancelReminder(id: string) {
-    const res = await fetch(`${API_BASE}/reminders/${id}`, { method: 'DELETE' });
-    return res.json();
+    return fetchJson(`${API_BASE}/reminders/${id}`, { method: 'DELETE' });
   },
 
   // Integrations & Connections
   async getIntegrations(): Promise<Integration[]> {
-    const res = await fetch(`${API_BASE}/integrations`);
-    const data = await res.json();
-    return data.integrations || [];
+    try {
+      const data = await fetchJson<{ success: boolean; integrations: Integration[] }>(`${API_BASE}/integrations`);
+      return data.integrations || [];
+    } catch {
+      return [];
+    }
   },
 
   async disconnectIntegration(provider: string) {
-    const res = await fetch(`${API_BASE}/oauth/disconnect/${provider}`, {
+    return fetchJson(`${API_BASE}/oauth/disconnect/${provider}`, {
       method: 'POST'
     });
-    return res.json();
   },
 
   // Activity Logs
   async getActivityLogs(): Promise<ActivityLog[]> {
-    const res = await fetch(`${API_BASE}/activity`);
-    const data = await res.json();
-    return data.logs || [];
+    try {
+      const data = await fetchJson<{ success: boolean; logs: ActivityLog[] }>(`${API_BASE}/activity`);
+      return data.logs || [];
+    } catch {
+      return [];
+    }
   },
 
-  // Computer Control
+  // Computer Control with Truthful Local Companion Probing
   async getComputerStatus(): Promise<ComputerStatus> {
-    const res = await fetch(`${API_BASE}/computer/status`);
-    return res.json();
+    const token = getCompanionToken();
+    const companionHeaders: Record<string, string> = {};
+    if (token) {
+      companionHeaders['Authorization'] = `Bearer ${token}`;
+    }
+
+    // 1. Try local companion daemon first (fast probe with 1.2s timeout)
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1200);
+
+      const res = await fetch(`${COMPANION_URL}/api/computer/status`, {
+        signal: controller.signal,
+        headers: companionHeaders
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        return {
+          ...data,
+          companionConnected: true,
+          isLocalCompanion: true
+        };
+      }
+    } catch {
+      // Local companion not responding
+    }
+
+    // 2. Query server/cloud status
+    try {
+      const serverData = await fetchJson<ComputerStatus>(`${API_BASE}/computer/status`);
+      return {
+        ...serverData,
+        companionConnected: false,
+        isLocalCompanion: false
+      };
+    } catch {
+      // Return truthful disconnected state
+      return {
+        success: true,
+        companionConnected: false,
+        isLocalCompanion: false,
+        os: {
+          platform: 'darwin',
+          isMacOS: true,
+          osRelease: 'Offline',
+          hasAccessibility: false,
+          hasAutomation: false,
+          hasScreenCapture: false,
+          hasSpeechSynthesis: false
+        },
+        activeWindow: {
+          frontmostApp: 'Companion Disconnected',
+          windowTitle: 'Run `npm run companion` on Mac to pair',
+          isBrowser: false,
+          isEditor: false,
+          isCommunication: false
+        },
+        authorizedFolders: []
+      };
+    }
   },
 
   async emergencyStop(): Promise<{ success: boolean; message: string }> {
-    const res = await fetch(`${API_BASE}/computer/stop`, { method: 'POST' });
-    return res.json();
+    // Try companion first
+    try {
+      return await fetchJson(`${COMPANION_URL}/api/computer/stop`, { method: 'POST' });
+    } catch {
+      return fetchJson(`${API_BASE}/computer/stop`, { method: 'POST' });
+    }
   },
 
   async computerOpenApp(appName: string): Promise<any> {
-    const res = await fetch(`${API_BASE}/computer/open-app`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ appName })
-    });
-    return res.json();
+    try {
+      return await fetchJson(`${COMPANION_URL}/api/computer/open-app`, {
+        method: 'POST',
+        body: JSON.stringify({ appName })
+      });
+    } catch {
+      return fetchJson(`${API_BASE}/computer/open-app`, {
+        method: 'POST',
+        body: JSON.stringify({ appName })
+      });
+    }
   },
 
   async computerSearch(query: string, engine = 'google'): Promise<any> {
-    const res = await fetch(`${API_BASE}/computer/search`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, engine })
-    });
-    return res.json();
+    try {
+      return await fetchJson(`${COMPANION_URL}/api/computer/search`, {
+        method: 'POST',
+        body: JSON.stringify({ query, engine })
+      });
+    } catch {
+      return fetchJson(`${API_BASE}/computer/search`, {
+        method: 'POST',
+        body: JSON.stringify({ query, engine })
+      });
+    }
   },
 
   async computerTypeText(text: string, options?: { replace?: boolean; submitWithReturn?: boolean }): Promise<any> {
-    const res = await fetch(`${API_BASE}/computer/type`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, ...options })
-    });
-    return res.json();
+    try {
+      return await fetchJson(`${COMPANION_URL}/api/computer/type`, {
+        method: 'POST',
+        body: JSON.stringify({ text, ...options })
+      });
+    } catch {
+      return fetchJson(`${API_BASE}/computer/type`, {
+        method: 'POST',
+        body: JSON.stringify({ text, ...options })
+      });
+    }
   },
 
   async computerReadActive(): Promise<any> {
-    const res = await fetch(`${API_BASE}/computer/read`);
-    return res.json();
+    try {
+      return await fetchJson(`${COMPANION_URL}/api/computer/read`);
+    } catch {
+      return fetchJson(`${API_BASE}/computer/read`);
+    }
   },
 
   async computerFindFile(query: string): Promise<any> {
-    const res = await fetch(`${API_BASE}/computer/find-file`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query })
-    });
-    return res.json();
+    try {
+      return await fetchJson(`${COMPANION_URL}/api/computer/find-file`, {
+        method: 'POST',
+        body: JSON.stringify({ query })
+      });
+    } catch {
+      return fetchJson(`${API_BASE}/computer/find-file`, {
+        method: 'POST',
+        body: JSON.stringify({ query })
+      });
+    }
   },
 
   async computerCaptureScreen(): Promise<any> {
-    const res = await fetch(`${API_BASE}/computer/screen`, { method: 'POST' });
-    return res.json();
+    try {
+      return await fetchJson(`${COMPANION_URL}/api/computer/screen`, { method: 'POST' });
+    } catch {
+      return fetchJson(`${API_BASE}/computer/screen`, { method: 'POST' });
+    }
   }
 };

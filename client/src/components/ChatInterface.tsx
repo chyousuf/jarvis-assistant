@@ -106,21 +106,21 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
           >
             <div className="flex items-center gap-2 mb-1 px-1">
-              <span className={`text-[10px] font-mono uppercase tracking-wider ${
-                msg.sender === 'user' ? 'text-cyan-400' : 'text-slate-400'
+              <span className={`text-[11px] font-mono font-bold uppercase tracking-wider ${
+                msg.sender === 'user' ? 'text-cyan-300' : 'text-slate-300'
               }`}>
                 {msg.sender === 'user' ? 'You' : 'JARVIS'}
               </span>
-              <span className="text-[10px] text-slate-500">
+              <span className="text-[10px] text-slate-400">
                 {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
             </div>
 
             <div
-              className={`max-w-2xl rounded-2xl px-4 py-2.5 text-xs sm:text-sm leading-relaxed ${
+              className={`max-w-2xl rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                 msg.sender === 'user'
-                  ? 'bg-cyan-600/20 text-cyan-100 border border-cyan-500/30'
-                  : 'bg-slate-900/90 text-slate-200 border border-slate-800 shadow-jarvis-card'
+                  ? 'bg-cyan-950/80 text-cyan-100 border border-cyan-500/50 shadow-sm font-medium'
+                  : 'bg-slate-900 text-slate-100 border border-slate-700 shadow-md font-sans'
               }`}
             >
               <div className="whitespace-pre-wrap font-sans">
@@ -250,9 +250,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
               type="text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder={isListening ? "Listening in selected language..." : "Type or speak command (e.g. Send WhatsApp to Ahmed, Draft email to Ali)..."}
+              placeholder={isListening ? "Listening in selected language..." : "Type command or say 'Reply with only: Hello'..."}
               disabled={isLoading}
-              className="w-full bg-slate-900 border border-slate-800 focus:border-cyan-500/60 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 outline-none transition-all shadow-inner font-sans"
+              className="w-full bg-slate-900 border-2 border-slate-700 focus:border-cyan-400 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-slate-400 outline-none transition-all shadow-inner font-sans"
             />
           </div>
 
@@ -266,7 +266,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </button>
         </form>
 
-        <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono mt-1.5 px-1">
+        <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono mt-1.5 px-1">
           <div className="flex items-center gap-2">
             <span>Voice: {voiceState.toUpperCase()}</span>
             <span>•</span>
