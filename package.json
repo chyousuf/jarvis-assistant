@@ -1,0 +1,17 @@
+{
+  "name": "jarvis-assistant",
+  "version": "1.0.0",
+  "description": "JARVIS Multi-Modal Autonomous Personal AI Assistant",
+  "type": "module",
+  "scripts": {
+    "start": "node start.js",
+    "dev": "node start.js",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "build": "cd client && npm run build",
+    "test": "cd server && npm test"
+  },
+  "keywords": ["jarvis", "ai-assistant", "voice", "tools", "tasks", "sandboxed"],
+  "author": "Antigravity",
+  "license": "ISC"
+}
