@@ -41,9 +41,11 @@ export class VoiceService {
 
   // VAD & Timing
   private silenceTimer: any = null;
-  private silenceHangoverMs: number = 1200; // 1.2s natural pause threshold
+  private silenceHangoverMs: number = 3500; // 3.5s natural pause threshold before fallback commit
   private speechDetected: boolean = false;
   private lastInterimText: string = '';
+  private lastDispatchedText: string = '';
+  private lastDispatchTime: number = 0;
 
   // Diagnostic Test Recording (In-Memory Only)
   private mediaRecorder: MediaRecorder | null = null;
@@ -184,9 +186,19 @@ export class VoiceService {
     // Normalize phonetics, Urdu script, and approved vocabulary
     const normalized = normalizeTranscript(rawText, this.vocabulary);
     const correction = parseCorrection(normalized.normalized);
+    const candidateText = correction.isCorrection ? correction.correctedCommand : normalized.normalized;
+
+    // Deduplication check: ignore if identical transcript was dispatched within 2000ms
+    const now = Date.now();
+    const cleanCandidate = candidateText.trim().toLowerCase();
+    if (this.lastDispatchedText === cleanCandidate && (now - this.lastDispatchTime) < 2000) {
+      return;
+    }
+    this.lastDispatchedText = cleanCandidate;
+    this.lastDispatchTime = now;
 
     // Wake word check if wake word mode is active
-    let textToDispatch = normalized.normalized;
+    let textToDispatch = candidateText;
     if (this.isWakeWordEnabled) {
       const lower = textToDispatch.toLowerCase();
       if (!lower.includes('jarvis') && !lower.includes('hey jarvis')) {
@@ -201,7 +213,7 @@ export class VoiceService {
     if (this.onTranscriptCallback) {
       this.onTranscriptCallback({
         raw: rawText,
-        text: correction.isCorrection ? correction.correctedCommand : textToDispatch,
+        text: textToDispatch,
         isFinal: true,
         isCorrection: correction.isCorrection,
         confidence
@@ -220,22 +232,25 @@ export class VoiceService {
     if (this.silenceTimer) {
       clearTimeout(this.silenceTimer);
     }
-    // Allow natural pause (1200ms) before committing if recognizer hasn't emitted isFinal
+    // Allow natural pause before fallback commit if recognizer hasn't emitted isFinal
     this.silenceTimer = setTimeout(() => {
       if (this.speechDetected && this.lastInterimText && this.state === 'listening') {
-        this.handleFinalTranscript(this.lastInterimText);
+        const textToCommit = this.lastInterimText;
         this.lastInterimText = '';
+        this.handleFinalTranscript(textToCommit);
       }
     }, this.silenceHangoverMs);
   }
 
   private updateRecognitionLanguage() {
     if (!this.recognition) return;
-    if (this.languageMode === 'auto') {
-      // In auto mode, default to 'en-US' with multi-language normalization
+    if (this.languageMode === 'ur-PK') {
+      this.recognition.lang = 'ur-PK';
+    } else if (this.languageMode === 'en-US') {
       this.recognition.lang = 'en-US';
     } else {
-      this.recognition.lang = this.languageMode;
+      // In auto mode, use standard English with bilingual normalization
+      this.recognition.lang = 'en-US';
     }
   }
 
@@ -287,7 +302,6 @@ export class VoiceService {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
-        sampleRate: 16000,
         channelCount: 1
       };
 
@@ -417,6 +431,10 @@ export class VoiceService {
     if (onAudioLevel) {
       this.onAudioLevelCallback = onAudioLevel;
     }
+  }
+
+  public setOnAudioLevel(cb: ((level: number) => void) | null) {
+    this.onAudioLevelCallback = cb;
   }
 
   public setState(newState: VoiceState) {

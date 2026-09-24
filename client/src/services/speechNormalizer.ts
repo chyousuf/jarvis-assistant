@@ -26,26 +26,37 @@ export const DEFAULT_VOCABULARY: VocabularyContext = {
 // Common Pakistani English / ASR misrecognitions mapped to canonical terms
 const PHONETIC_MAPPINGS: Array<[RegExp, string]> = [
   // App names
-  [/\b(?:what'?s?\s*app|watsapp|watzaap|watts\s*app|vatsapp)\b/gi, 'WhatsApp'],
-  [/\b(?:corom|crome|khrom|gogle\s*crome|google\s*crome)\b/gi, 'Chrome'],
-  [/\b(?:microsft\s*word|ms\s*word|werd|ward)\b/gi, 'Word'],
-  [/\b(?:text\s*edit|textedit|tax\s*edit)\b/gi, 'TextEdit'],
-  [/\b(?:you\s*tube|utube|u\s*tube)\b/gi, 'YouTube'],
+  [/\b(?:what'?s?\s*app|watsapp|watzaap|watts\s*app|vatsapp|wat\s*sub)\b/gi, 'WhatsApp'],
+  [/\b(?:corom|crome|khrom|gogle\s*crome|google\s*crome|krome)\b/gi, 'Chrome'],
+  [/\b(?:microsft\s*word|ms\s*word|werd|ward|microsoft\s*ward)\b/gi, 'Word'],
+  [/\b(?:text\s*edit|textedit|tax\s*edit|text\s*add)\b/gi, 'TextEdit'],
+  [/\b(?:you\s*tube|utube|u\s*tube|you\s*toob)\b/gi, 'YouTube'],
+  [/\b(?:safari|safari\s*browser)\b/gi, 'Safari'],
+  [/\b(?:calcu\s*later|calcy|calculater)\b/gi, 'Calculator'],
+  [/\b(?:terminel|tarminal|termnal)\b/gi, 'Terminal'],
 
   // Names (Approved contacts)
-  [/\b(?:i\s*met|aamad|ahmad|ahemd)\b/gi, 'Ahmed'],
+  [/\b(?:i\s*met|aamad|ahmad|ahemd|ahemad)\b/gi, 'Ahmed'],
   [/\b(?:aali|aly)\b/gi, 'Ali'],
   [/\b(?:hasan|hassan)\b/gi, 'Hassan'],
   [/\b(?:raza|raaza)\b/gi, 'Raza'],
   [/\b(?:khan|kaan)\b/gi, 'Khan'],
+  [/\b(?:yousaf|yousuf|yousif|yousaf\s*bhai)\b/gi, 'Yousaf'],
+  [/\b(?:usman|osman|uthman)\b/gi, 'Usman'],
+  [/\b(?:bilal|belal)\b/gi, 'Bilal'],
+  [/\b(?:hamza|humza)\b/gi, 'Hamza'],
+  [/\b(?:fatima|faatma)\b/gi, 'Fatima'],
+  [/\b(?:ayesha|aisha)\b/gi, 'Ayesha'],
 
   // Urdu action words / verbs (often misheard phonetically by English STT models)
-  [/\b(?:polo|kolo|khollo|khoolo)\b/gi, 'kholo'],
-  [/\b(?:let\s*go|likkho|leekho)\b/gi, 'likho'],
-  [/\b(?:bejo|bhejj\s*o|bheej\s*o)\b/gi, 'bhejo'],
+  [/\b(?:polo|kolo|khollo|khoolo|khol\s*do|khol)\b/gi, 'kholo'],
+  [/\b(?:let\s*go|likkho|leekho|likh\s*do|likh)\b/gi, 'likho'],
+  [/\b(?:bejo|bhejj\s*o|bheej\s*o|bhej\s*do|bhej)\b/gi, 'bhejo'],
   [/\b(?:seve|saave)\s*karo\b/gi, 'save karo'],
-  [/\b(?:roko|rooko)\b/gi, 'ruko'],
-  [/\b(?:parh\s*lo|parho|parhkar\s*sunao|sunao)\b/gi, 'parho'],
+  [/\b(?:roko|rooko|ruk\s*jao|ruk|rukho)\b/gi, 'ruko'],
+  [/\b(?:parh\s*lo|parho|parhkar\s*sunao|sunao|parh\s*do)\b/gi, 'parho'],
+  [/\b(?:band\s*kar\s*do|close\s*karo)\b/gi, 'band karo'],
+  [/\b(?:theek\s*hai|teek\s*hai|thek\s*hai)\b/gi, 'theek hai'],
 
   // Corrections prefixes
   [/\b(?:nahin|nahi|nae|nai|no)\s*,?\s*(?:maine|mene|me\s*ne)\s*(?:kaha|bola)\b/gi, 'No, I said'],
@@ -63,14 +74,17 @@ const URDU_SCRIPT_MAPPINGS: Array<[RegExp, string]> = [
   [/ورڈ/g, 'Word'],
   [/یوٹیوب\s*(?:کھولو|اوپن)/g, 'YouTube kholo'],
   [/یوٹیوب/g, 'YouTube'],
+  [/ٹیکسٹ\s*ایڈٹ/g, 'TextEdit'],
+  [/کیلکولیٹر/g, 'Calculator'],
 
   // Actions
+  [/احمد\s*رضا\s*کو\s*واٹس\s*ایپ\s*میسج\s*بھیجو/g, 'Ahmed Raza ko WhatsApp message bhejo'],
   [/احمد\s*کو\s*میسج\s*لکھو/g, 'Ahmed ko message likho'],
   [/احمد\s*کو\s*(?:واٹس\s*ایپ\s*)?میسج\s*بھیجو/g, 'Ahmed ko WhatsApp message bhejo'],
   [/علی\s*کو\s*ای میل\s*(?:ڈرافٹ\s*کرو|بھیجو)/g, 'Ali ko email draft karo'],
   [/(?:اس\s*ڈاکومنٹ\s*کو|ڈاکومنٹ)\s*سیو\s*کرو/g, 'Is document ko save karo'],
   [/(?:اسے\s*پڑھو|پڑھ\s*کر\s*سناؤ|پڑھو)/g, 'Read this aloud'],
-  [/روکو|رک\s*جاؤ|سٹاپ/g, 'ruko']
+  [/روکو|رک\s*جاؤ|سٹاپ|بس\s*کرو/g, 'ruko']
 ];
 
 /**

@@ -27,18 +27,71 @@ Key guidelines:
 5. Be concise, respectful, and helpful.`;
 
 /**
+/**
+ * Normalizes multi-turn message history for Google Gemini generateContent:
+ * 1. Strips leading 'model' messages (Gemini strictly requires first content to be 'user')
+ * 2. Merges consecutive same-role messages to guarantee strict user/model alternation
+ * 3. Ensures the sequence ends with a 'user' prompt
+ */
+export function normalizeGeminiContents(messages: ChatMessage[]): Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> {
+  const cleanList: Array<{ role: 'user' | 'model'; text: string }> = [];
+  for (const m of messages) {
+    if (!m.content || !m.content.trim()) continue;
+    if (m.role === 'system') continue;
+    cleanList.push({
+      role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
+      text: m.content.trim()
+    });
+  }
+
+  // 1. Drop leading model messages
+  while (cleanList.length > 0 && cleanList[0].role === 'model') {
+    cleanList.shift();
+  }
+
+  if (cleanList.length === 0) {
+    cleanList.push({ role: 'user', text: 'Hello' });
+  }
+
+  // 2. Merge consecutive messages with the same role
+  const alternating: Array<{ role: 'user' | 'model'; text: string }> = [];
+  for (const m of cleanList) {
+    if (alternating.length > 0 && alternating[alternating.length - 1].role === m.role) {
+      alternating[alternating.length - 1].text += '\n\n' + m.text;
+    } else {
+      alternating.push({ role: m.role, text: m.text });
+    }
+  }
+
+  // 3. Ensure ends with 'user'
+  while (alternating.length > 0 && alternating[alternating.length - 1].role === 'model') {
+    alternating.pop();
+  }
+
+  if (alternating.length === 0) {
+    alternating.push({ role: 'user', text: 'Hello' });
+  }
+
+  return alternating.map(item => ({
+    role: item.role,
+    parts: [{ text: item.text }]
+  }));
+}
+
+/**
  * Call Google Gemini API via native fetch
  */
-async function callGemini(apiKey: string, messages: ChatMessage[], modelName = 'gemini-3.5-flash-lite', customSystem?: string): Promise<AIResponse> {
-  const modelsToTry = [modelName, 'gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
+async function callGemini(apiKey: string, messages: ChatMessage[], modelName = 'gemini-3.5-flash', customSystem?: string): Promise<AIResponse> {
+  const modelsToTry = [
+    modelName,
+    'gemini-3.5-flash',
+    'gemini-3.1-flash-lite-preview',
+    'gemini-3-flash-preview',
+    'gemini-3.5-flash-lite'
+  ];
   const uniqueModels = Array.from(new Set(modelsToTry));
 
-  const contents = messages
-    .filter(m => m.role !== 'system')
-    .map(m => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }]
-    }));
+  const contents = normalizeGeminiContents(messages);
 
   const payload: any = {
     contents,
@@ -59,7 +112,7 @@ async function callGemini(apiKey: string, messages: ChatMessage[], modelName = '
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(15000)
+        signal: AbortSignal.timeout(30000)
       });
 
       if (!res.ok) {
@@ -233,7 +286,7 @@ export function resolveAIConfig(customKey?: string, customProvider?: string): AI
   return {
     provider,
     apiKey,
-    model: process.env.AI_MODEL || (provider === 'gemini' ? 'gemini-3.5-flash-lite' : provider === 'groq' ? 'llama-3.3-70b-versatile' : undefined)
+    model: process.env.AI_MODEL || (provider === 'gemini' ? 'gemini-3.5-flash' : provider === 'groq' ? 'llama-3.3-70b-versatile' : undefined)
   };
 }
 
@@ -248,7 +301,7 @@ export async function executeAIConversation(
 
   switch (provider) {
     case 'gemini':
-      return callGemini(apiKey, messages, model || 'gemini-3.5-flash-lite', systemInstruction);
+      return callGemini(apiKey, messages, model || 'gemini-3.5-flash', systemInstruction);
     case 'groq':
       return callOpenAICompatible(
         apiKey,

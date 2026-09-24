@@ -6,7 +6,7 @@ import { validateAccess } from './authService.js';
 // In-memory sliding-window IP rate limiter
 const ipRequestWindow = new Map<string, number[]>();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000;
-const MAX_REQUESTS_PER_WINDOW = 30;
+const MAX_REQUESTS_PER_WINDOW = 60;
 
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
@@ -94,9 +94,11 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    const message = body?.message || '';
-    const conversationId = body?.conversationId || 'default';
-    const history: Array<{ role: string; content: string }> = Array.isArray(body?.history) ? body.history : [];
+    const history: Array<{ role: string; content: string }> = Array.isArray(body?.history)
+      ? body.history
+      : Array.isArray(body?.conversationHistory)
+      ? body.conversationHistory
+      : [];
 
     if (!message || typeof message !== 'string') {
       res.status(400).json({ error: 'Message text is required.' });

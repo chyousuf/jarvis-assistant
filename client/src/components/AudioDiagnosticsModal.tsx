@@ -101,13 +101,10 @@ export const AudioDiagnosticsModal: React.FC<AudioDiagnosticsModalProps> = ({
       loadDevices();
       voiceService.startAudioPipeline();
 
-      // Listen to live audio levels
-      voiceService.setCallbacks(
-        () => {},
-        () => {},
-        (level) => setAudioLevel(level)
-      );
+      // Listen to live audio levels without overwriting main voice callbacks
+      voiceService.setOnAudioLevel((level) => setAudioLevel(level));
     } else {
+      voiceService.setOnAudioLevel(null);
       setPlaybackUrl(null);
       setIsRecordingTest(false);
     }

@@ -27,7 +27,7 @@ import {
   Tag
 } from 'lucide-react';
 import { Message, Task, Approval, Citation, api } from '../services/api.js';
-import { VoiceState } from '../services/voice.js';
+import { VoiceState, LanguageMode } from '../services/voice.js';
 import { ActiveTab } from './Header.js';
 import { MarkdownRenderer } from './MarkdownRenderer.js';
 
@@ -45,6 +45,8 @@ interface ChatInterfaceProps {
   isListening: boolean;
   onToggleListening: () => void;
   voiceTranscript: string;
+  language?: LanguageMode;
+  onToggleLanguage?: () => void;
   onNavigateTab?: (tab: ActiveTab) => void;
 }
 
@@ -62,6 +64,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   isListening,
   onToggleListening,
   voiceTranscript,
+  language = 'auto',
+  onToggleLanguage,
   onNavigateTab
 }) => {
   const [inputText, setInputText] = useState('');
@@ -453,6 +457,17 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           />
 
           <div className="absolute right-2 flex items-center gap-1">
+            {onToggleLanguage && (
+              <button
+                type="button"
+                onClick={onToggleLanguage}
+                title={`Speech Language: ${language === 'auto' ? 'Auto (EN+UR)' : language === 'en-US' ? 'English (PK/US)' : 'Urdu (اردو)'}. Click to switch.`}
+                className="px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[10px] font-mono text-cyan-300 font-bold transition-all"
+              >
+                {language === 'auto' ? 'AUTO' : language === 'en-US' ? 'EN' : 'UR'}
+              </button>
+            )}
+
             <button
               type="button"
               onClick={onToggleListening}
