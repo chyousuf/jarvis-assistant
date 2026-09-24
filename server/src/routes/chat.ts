@@ -9,11 +9,28 @@ const router = Router();
  */
 router.post('/', async (req: Request, res: Response) => {
   try {
+    // Passcode Protection (if JARVIS_ACCESS_PASSCODE is set in environment)
+    const serverPasscode = process.env.JARVIS_ACCESS_PASSCODE;
+    if (serverPasscode) {
+      const providedPasscode = (req.headers['x-jarvis-passcode'] as string) || req.body?.passcode || req.query?.passcode;
+      if (providedPasscode !== serverPasscode) {
+        res.status(401).json({
+          success: false,
+          error: 'PASSCODE_REQUIRED',
+          message: 'This personal JARVIS deployment is protected. Please enter the access passcode in the Connections tab.'
+        });
+        return;
+      }
+    }
+
     const { message, conversationId = 'default' } = req.body;
     if (!message || typeof message !== 'string') {
       res.status(400).json({ error: 'Message text is required.' });
       return;
     }
+
+    const clientKey = (req.headers['x-ai-api-key'] as string) || req.body?.aiApiKey;
+    const clientProvider = (req.headers['x-ai-provider'] as string) || req.body?.aiProvider;
 
     const db = getDatabase();
     const now = new Date().toISOString();
@@ -42,7 +59,7 @@ router.post('/', async (req: Request, res: Response) => {
     `).all(conversationId) as any[];
 
     // Process through JARVIS Orchestrator
-    const result = await orchestrator.processUserMessage(message, historyRows);
+    const result = await orchestrator.processUserMessage(message, historyRows, clientKey, clientProvider);
 
     // Save assistant reply
     const jarvisMsgId = `msg-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;

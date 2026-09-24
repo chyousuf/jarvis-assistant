@@ -10,6 +10,8 @@
     "dev:client": "cd client && npm run dev",
     "build": "cd client && npm run build",
     "companion": "cd server && tsx src/companion.ts",
+    "companion:install-service": "bash scripts/install-companion-service.sh",
+    "companion:uninstall-service": "bash scripts/uninstall-companion-service.sh",
     "test": "cd server && npm test"
   },
   "keywords": ["jarvis", "ai-assistant", "voice", "tools", "tasks", "sandboxed"],

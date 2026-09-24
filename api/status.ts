@@ -10,6 +10,7 @@ export default function handler(req: any, res: any) {
   }
 
   // Check actual environment configuration truth
+  const hasAI = !!(process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.GROQ_API_KEY);
   const hasWhatsApp = !!(process.env.WHATSAPP_PHONE_NUMBER_ID && process.env.WHATSAPP_ACCESS_TOKEN);
   const hasGmail = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
   const hasOutlook = !!(process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET);
@@ -23,6 +24,12 @@ export default function handler(req: any, res: any) {
       timestamp: new Date().toISOString()
     },
     integrations: {
+      ai: {
+        configured: hasAI,
+        status: hasAI ? 'configured' : 'needs_setup',
+        provider: process.env.GEMINI_API_KEY ? 'gemini' : process.env.OPENAI_API_KEY ? 'openai' : process.env.ANTHROPIC_API_KEY ? 'anthropic' : process.env.GROQ_API_KEY ? 'groq' : 'none',
+        model: process.env.AI_MODEL || (process.env.GEMINI_API_KEY ? 'gemini-3.5-flash-lite' : undefined)
+      },
       whatsapp: {
         configured: hasWhatsApp,
         status: hasWhatsApp ? 'connected' : 'needs_setup',

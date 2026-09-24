@@ -57,7 +57,8 @@ async function callGemini(apiKey: string, messages: ChatMessage[], modelName = '
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(15000)
       });
 
       if (!res.ok) {
@@ -119,7 +120,8 @@ async function callOpenAICompatible(
       model: modelName,
       messages: formattedMessages,
       temperature: 0.3
-    })
+    }),
+    signal: AbortSignal.timeout(15000)
   });
 
   if (!res.ok) {
@@ -165,7 +167,8 @@ async function callAnthropic(apiKey: string, messages: ChatMessage[], modelName 
       messages: formattedMessages,
       max_tokens: 1024,
       temperature: 0.3
-    })
+    }),
+    signal: AbortSignal.timeout(15000)
   });
 
   if (!res.ok) {
@@ -261,4 +264,69 @@ export async function executeAIConversation(
         'openai'
       );
   }
+}
+
+/**
+ * Helper to mask sensitive API key for display
+ */
+export function maskApiKey(key?: string): string | null {
+  if (!key || key.length < 8) return null;
+  const prefix = key.substring(0, 6);
+  const suffix = key.substring(key.length - 4);
+  return `${prefix}...${suffix}`;
+}
+
+/**
+ * Error classifier for granular diagnostics
+ */
+export function classifyAIError(err: any): { errorCode: string; errorMessage: string } {
+  const msg = err?.message || String(err) || 'Unknown AI error';
+  const lower = msg.toLowerCase();
+
+  if (lower.includes('quota') || lower.includes('billing') || lower.includes('resource_exhausted') || lower.includes('exceeded your current quota')) {
+    return {
+      errorCode: 'EXHAUSTED_QUOTA',
+      errorMessage: 'Provider quota or credit balance has been exhausted. Check your provider billing or limits.'
+    };
+  }
+  if (
+    lower.includes('401') ||
+    lower.includes('403') ||
+    lower.includes('invalid api key') ||
+    lower.includes('api key not valid') ||
+    lower.includes('unauthorized') ||
+    lower.includes('permission_denied')
+  ) {
+    return {
+      errorCode: 'INVALID_CREDENTIALS',
+      errorMessage: 'Configured API key was rejected by the provider (Invalid or lacking permission).'
+    };
+  }
+  if (lower.includes('429') || lower.includes('rate limit') || lower.includes('too many requests')) {
+    return {
+      errorCode: 'RATE_LIMIT',
+      errorMessage: 'Provider request rate limit exceeded. Please wait a moment before trying again.'
+    };
+  }
+  if (
+    lower.includes('503') ||
+    lower.includes('overloaded') ||
+    lower.includes('high demand') ||
+    lower.includes('service unavailable')
+  ) {
+    return {
+      errorCode: 'HIGH_DEMAND_503',
+      errorMessage: 'AI model is experiencing temporary high demand (HTTP 503). Retrying shortly.'
+    };
+  }
+  if (lower.includes('timeout') || lower.includes('aborted') || lower.includes('timed out')) {
+    return {
+      errorCode: 'TIMEOUT',
+      errorMessage: 'Connection to AI service timed out after 15 seconds.'
+    };
+  }
+  return {
+    errorCode: 'SERVICE_ERROR',
+    errorMessage: msg
+  };
 }

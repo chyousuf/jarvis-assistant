@@ -30,7 +30,9 @@ export class JarvisOrchestrator {
    */
   async processUserMessage(
     userText: string,
-    conversationHistory: Array<{ role: string; content: string }> = []
+    conversationHistory: Array<{ role: string; content: string }> = [],
+    customKey?: string,
+    customProvider?: string
   ): Promise<OrchestrationResult> {
     const trimmed = userText.trim();
     if (!trimmed) {
@@ -46,7 +48,7 @@ export class JarvisOrchestrator {
     const memoryContext = getMemoriesContext();
 
     // 1. Check Voice Correction (e.g. "No, I said open WhatsApp", "Nahin, Chrome kholo", "I meant open WhatsApp")
-    const correctionResult = await this.handleVoiceCorrection(trimmed, conversationHistory, memoryContext);
+    const correctionResult = await this.handleVoiceCorrection(trimmed, conversationHistory, memoryContext, customKey, customProvider);
     if (correctionResult) {
       correctionResult.rawTranscript = trimmed;
       return correctionResult;
@@ -60,7 +62,7 @@ export class JarvisOrchestrator {
     }
 
     // 3. Default: JARVIS Multi-Modal Reasoning Engine
-    const result = await this.processWithBuiltinEngine(trimmed, conversationHistory, memoryContext);
+    const result = await this.processWithBuiltinEngine(trimmed, conversationHistory, memoryContext, customKey, customProvider);
     result.rawTranscript = trimmed;
     return result;
   }
@@ -71,7 +73,9 @@ export class JarvisOrchestrator {
   private async handleVoiceCorrection(
     text: string,
     history: Array<{ role: string; content: string }>,
-    memoryContext: string
+    memoryContext: string,
+    customKey?: string,
+    customProvider?: string
   ): Promise<OrchestrationResult | null> {
     const correctionMatch = text.match(/^(?:no[,.\s]+(?:i\s+said|i\s+meant|not\s+that)?|i\s+meant|wrong[,.\s]+(?:i\s+said\s+)?|(?:nahin|nahi|nae)[,.\s]+(?:maine\s+kaha|mera\s+matlab\s+tha)?|(?:correction|correct\s+that\s+to)[:\s]+)(.+)$/i);
 
@@ -85,7 +89,7 @@ export class JarvisOrchestrator {
       }
 
       // Execute the corrected command
-      const result = await this.processWithBuiltinEngine(correctedCommand, history, memoryContext);
+      const result = await this.processWithBuiltinEngine(correctedCommand, history, memoryContext, customKey, customProvider);
       return {
         ...result,
         reply: `Correction noted: Replacing previous action with: "${correctedCommand}".\n\n${result.reply}`,
@@ -141,7 +145,9 @@ export class JarvisOrchestrator {
   private async processWithBuiltinEngine(
     text: string,
     history: Array<{ role: string; content: string }>,
-    memoryContext: string
+    memoryContext: string,
+    customKey?: string,
+    customProvider?: string
   ): Promise<OrchestrationResult> {
     const lower = text.toLowerCase();
 
@@ -675,7 +681,7 @@ export class JarvisOrchestrator {
     }
 
     // Ordinary Conversation: Connect to Real AI Backend
-    const aiConfig = resolveAIConfig();
+    const aiConfig = resolveAIConfig(customKey, customProvider);
     if (aiConfig) {
       try {
         const contextMessages: ChatMessage[] = [];

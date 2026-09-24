@@ -1,8 +1,10 @@
-export default function handler(req: any, res: any) {
+import aiHandler from './ai.js';
+
+export default async function handler(req: any, res: any) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-ai-api-key, x-ai-provider, x-jarvis-passcode');
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
@@ -11,6 +13,10 @@ export default function handler(req: any, res: any) {
 
   const url = req.url || '';
   const path = url.split('?')[0].replace(/^\/api\/?/, '');
+
+  if (path.startsWith('ai')) {
+    return aiHandler(req, res);
+  }
 
   // Sub-route handling
   if (path.startsWith('contacts')) {

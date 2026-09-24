@@ -16,6 +16,7 @@ import oauthRouter from './routes/oauth.js';
 import computerRouter from './routes/computer.js';
 import companionRouter, { pairingToken, TOKEN_FILE } from './routes/companion.js';
 import voiceRouter from './routes/voice.js';
+import aiRouter from './routes/ai.js';
 import { subscribeToTaskEvents } from './tasks/taskRunner.js';
 import { pollDueReminders } from './tools/reminders.js';
 
@@ -36,7 +37,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   }
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-ai-api-key, x-ai-provider');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-ai-api-key, x-ai-provider, x-jarvis-passcode');
   res.setHeader('Access-Control-Allow-Private-Network', 'true');
 
   if (req.method === 'OPTIONS') {
@@ -83,6 +84,7 @@ app.use('/api/oauth', oauthRouter);
 app.use('/api/computer', computerRouter);
 app.use('/api/companion', companionRouter);
 app.use('/api/voice', voiceRouter);
+app.use('/api/ai', aiRouter);
 
 // Server-Sent Events (SSE) for Real-Time Telemetry & Progress
 const sseClients = new Set<Response>();

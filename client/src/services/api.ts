@@ -194,6 +194,18 @@ export function setAIProvider(provider: string) {
   localStorage.setItem('jarvis_ai_provider', provider);
 }
 
+export function getAccessPasscode(): string {
+  return localStorage.getItem('jarvis_access_passcode') || '';
+}
+
+export function setAccessPasscode(passcode: string) {
+  if (passcode) {
+    localStorage.setItem('jarvis_access_passcode', passcode.trim());
+  } else {
+    localStorage.removeItem('jarvis_access_passcode');
+  }
+}
+
 /**
  * Resilient JSON fetch helper that inspects status, validates Content-Type,
  * and guards against HTML/empty responses that cause "Unexpected end of JSON input".
@@ -212,6 +224,12 @@ export async function fetchJson<T = any>(url: string, options: RequestInit = {})
   const aiProvider = getAIProvider();
   if (aiProvider && !headers.has('x-ai-provider')) {
     headers.set('x-ai-provider', aiProvider);
+  }
+
+  // Inject Access Passcode if configured
+  const passcode = getAccessPasscode();
+  if (passcode && !headers.has('x-jarvis-passcode')) {
+    headers.set('x-jarvis-passcode', passcode);
   }
 
   let res: Response;
@@ -246,6 +264,37 @@ export async function fetchJson<T = any>(url: string, options: RequestInit = {})
 }
 
 export const api = {
+  // AI Status & Real Diagnostics
+  async getAIStatus(): Promise<{
+    success: boolean;
+    configured: boolean;
+    source: string;
+    provider: string;
+    model: string;
+    maskedKey: string | null;
+    environment: string;
+    passcodeRequired: boolean;
+  }> {
+    return fetchJson(`${API_BASE}/ai/status`);
+  },
+
+  async testAIConnection(prompt = 'What is 17 multiplied by 6?'): Promise<{
+    success: boolean;
+    latencyMs: number;
+    provider: string;
+    model: string;
+    prompt?: string;
+    reply?: string;
+    errorCode?: string;
+    errorMessage?: string;
+    testedAt: string;
+  }> {
+    return fetchJson(`${API_BASE}/ai/test`, {
+      method: 'POST',
+      body: JSON.stringify({ prompt })
+    });
+  },
+
   // Chat
   async sendMessage(message: string, conversationId = 'default') {
     return fetchJson(`${API_BASE}/chat`, {

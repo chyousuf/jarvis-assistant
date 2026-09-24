@@ -50,6 +50,21 @@ export const CompanionWizard: React.FC<CompanionWizardProps> = ({
     }
   }, []);
 
+  // Auto-reconnect on wake or tab focus
+  useEffect(() => {
+    const handleWake = () => {
+      if (document.visibilityState === 'visible' && isOpen) {
+        handleVerifyConnection();
+      }
+    };
+    document.addEventListener('visibilitychange', handleWake);
+    window.addEventListener('online', handleWake);
+    return () => {
+      document.removeEventListener('visibilitychange', handleWake);
+      window.removeEventListener('online', handleWake);
+    };
+  }, [isOpen]);
+
   const handleVerifyConnection = async () => {
     setIsVerifying(true);
     setErrorMsg(null);
@@ -176,21 +191,38 @@ export const CompanionWizard: React.FC<CompanionWizardProps> = ({
         </div>
 
         {/* Step 2: Startup Command */}
-        <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2 text-xs">
+        <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5 text-xs">
           <span className="font-mono text-slate-400 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
             <Terminal className="w-3.5 h-3.5 text-cyan-400" /> Start Local Companion Daemon
           </span>
           <p className="text-slate-400">
-            Open your local Mac terminal in the project directory and run:
+            Run the daemon manually in your terminal, or register it as a macOS service to start at login:
           </p>
-          <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-lg p-2.5 font-mono text-cyan-300">
-            <code>npm run companion</code>
-            <button
-              onClick={() => navigator.clipboard.writeText('npm run companion')}
-              className="text-[11px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
-            >
-              Copy
-            </button>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-lg p-2.5 font-mono text-cyan-300">
+              <div>
+                <span className="text-[10px] text-slate-500 block">Manual Run:</span>
+                <code>npm run companion</code>
+              </div>
+              <button
+                onClick={() => navigator.clipboard.writeText('npm run companion')}
+                className="text-[11px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
+              >
+                Copy
+              </button>
+            </div>
+            <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-lg p-2.5 font-mono text-cyan-300">
+              <div>
+                <span className="text-[10px] text-slate-500 block">Automatic Start-at-Login (macOS Service):</span>
+                <code>npm run companion:install-service</code>
+              </div>
+              <button
+                onClick={() => navigator.clipboard.writeText('npm run companion:install-service')}
+                className="text-[11px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
+              >
+                Copy
+              </button>
+            </div>
           </div>
           <p className="text-[11px] text-slate-500 font-mono">
             * The daemon listens on <code>http://127.0.0.1:4001</code> and generates a pairing token in <code>~/.jarvis_token</code>.

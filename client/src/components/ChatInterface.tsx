@@ -3,6 +3,7 @@ import { Send, Mic, AlertTriangle, CheckCircle2, XCircle, Clock, Shield, ArrowRi
 import { Message, Task, Approval } from '../services/api.js';
 import { VoiceState } from '../services/voice.js';
 import { ActiveTab } from './Header.js';
+import { MarkdownRenderer } from './MarkdownRenderer.js';
 
 interface ChatInterfaceProps {
   messages: Message[];
@@ -126,8 +127,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                   : 'bg-slate-900 text-slate-100 border border-slate-700 shadow-md font-sans'
               }`}
             >
-              <div className="whitespace-pre-wrap font-sans">
-                {msg.content}
+              <div>
+                <MarkdownRenderer content={msg.content} />
                 {msg.sender === 'jarvis' && onNavigateTab && (msg.content.includes('Connections') || msg.content.includes('AI Service Unavailable')) && (
                   <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center gap-2">
                     <button
