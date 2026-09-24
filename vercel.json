@@ -9,6 +9,18 @@
       "destination": "/api/ai"
     },
     {
+      "source": "/api/auth/:match*",
+      "destination": "/api/auth"
+    },
+    {
+      "source": "/api/chat/:match*",
+      "destination": "/api/chat"
+    },
+    {
+      "source": "/api/learning/:match*",
+      "destination": "/api/learning"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
