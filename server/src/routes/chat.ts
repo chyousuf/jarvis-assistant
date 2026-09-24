@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase } from '../db/database.js';
 import { orchestrator } from '../ai/orchestrator.js';
+import { validateAccess } from '../auth/authService.js';
+import { getUserLearningStore } from './learning.js';
 
 const router = Router();
 
@@ -9,18 +11,15 @@ const router = Router();
  */
 router.post('/', async (req: Request, res: Response) => {
   try {
-    // Passcode Protection (if JARVIS_ACCESS_PASSCODE is set in environment)
-    const serverPasscode = process.env.JARVIS_ACCESS_PASSCODE;
-    if (serverPasscode) {
-      const providedPasscode = (req.headers['x-jarvis-passcode'] as string) || req.body?.passcode || req.query?.passcode;
-      if (providedPasscode !== serverPasscode) {
-        res.status(401).json({
-          success: false,
-          error: 'PASSCODE_REQUIRED',
-          message: 'This personal JARVIS deployment is protected. Please enter the access passcode in the Connections tab.'
-        });
-        return;
-      }
+    // Access validation (fails closed in production if auth unconfigured)
+    const auth = validateAccess(req);
+    if (!auth.authorized) {
+      res.status(auth.status || 401).json({
+        success: false,
+        error: auth.error,
+        message: auth.message
+      });
+      return;
     }
 
     const { message, conversationId = 'default' } = req.body;
@@ -29,7 +28,15 @@ router.post('/', async (req: Request, res: Response) => {
       return;
     }
 
-    const clientKey = (req.headers['x-ai-api-key'] as string) || req.body?.aiApiKey;
+    if (message.length > 20000) {
+      res.status(400).json({
+        success: false,
+        error: 'PAYLOAD_TOO_LARGE',
+        message: 'Message exceeds maximum allowed length of 20,000 characters.'
+      });
+      return;
+    }
+
     const clientProvider = (req.headers['x-ai-provider'] as string) || req.body?.aiProvider;
 
     const db = getDatabase();
@@ -62,12 +69,13 @@ router.post('/', async (req: Request, res: Response) => {
     const effectiveHistory = historyRows && historyRows.length > 0 ? historyRows : clientHistory;
 
     // Process through JARVIS Orchestrator
+    const userStore = getUserLearningStore(auth.userId);
     const result = await orchestrator.processUserMessage(
       message,
       effectiveHistory,
-      clientKey,
+      undefined,
       clientProvider,
-      req.body?.learningContext
+      req.body?.learningContext || userStore
     );
 
     // Save assistant reply

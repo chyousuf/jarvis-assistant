@@ -7,53 +7,69 @@ import {
   ReusableRoutine,
   chunkDocument
 } from './learningService.js';
+import { validateAccess } from './authService.js';
 
-// In-memory fallback storage for serverless runtime
-let preferencesStore: UserPreference[] = [...DEFAULT_PREFERENCES];
-let correctionsStore: UserCorrection[] = [];
-let routinesStore: ReusableRoutine[] = [...DEFAULT_ROUTINES];
-let documentsStore: DocumentKnowledge[] = [
-  {
-    id: 'doc-welcome',
-    title: 'JARVIS System Architecture & Directives',
-    content: 'J.A.R.V.I.S. (Just A Rather Very Intelligent System) is engineered for autonomous desktop automation, context-aware reasoning, and personal productivity. Built with privacy-first principles and bounded tool execution.\n\nAll tools require verified user consent for external communications and destructive local changes. Grounded knowledge retrieval enforces strict untrusted evidence boundaries.',
-    fileType: 'md',
-    tags: ['system', 'architecture', 'directives'],
-    chunks: chunkDocument(
-      'doc-welcome',
-      'JARVIS System Architecture & Directives',
-      'J.A.R.V.I.S. (Just A Rather Very Intelligent System) is engineered for autonomous desktop automation, context-aware reasoning, and personal productivity. Built with privacy-first principles and bounded tool execution.\n\nAll tools require verified user consent for external communications and destructive local changes. Grounded knowledge retrieval enforces strict untrusted evidence boundaries.'
-    ),
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
+interface UserLearningStore {
+  preferences: UserPreference[];
+  corrections: UserCorrection[];
+  routines: ReusableRoutine[];
+  documents: DocumentKnowledge[];
+}
+
+// User-isolated memory partitions
+const userLearningStores = new Map<string, UserLearningStore>();
+
+export function getUserLearningStore(userId = 'owner'): UserLearningStore {
+  const normalizedId = userId.trim() || 'owner';
+  if (!userLearningStores.has(normalizedId)) {
+    userLearningStores.set(normalizedId, {
+      preferences: JSON.parse(JSON.stringify(DEFAULT_PREFERENCES)),
+      corrections: [],
+      routines: JSON.parse(JSON.stringify(DEFAULT_ROUTINES)),
+      documents: normalizedId === 'owner' ? [
+        {
+          id: 'doc-welcome',
+          title: 'JARVIS System Architecture & Directives',
+          content: 'J.A.R.V.I.S. (Just A Rather Very Intelligent System) is engineered for autonomous desktop automation, context-aware reasoning, and personal productivity. Built with privacy-first principles and bounded tool execution.\n\nAll tools require verified user consent for external communications and destructive local changes. Grounded knowledge retrieval enforces strict untrusted evidence boundaries.',
+          fileType: 'md',
+          tags: ['system', 'architecture', 'directives'],
+          chunks: chunkDocument(
+            'doc-welcome',
+            'JARVIS System Architecture & Directives',
+            'J.A.R.V.I.S. (Just A Rather Very Intelligent System) is engineered for autonomous desktop automation, context-aware reasoning, and personal productivity. Built with privacy-first principles and bounded tool execution.\n\nAll tools require verified user consent for external communications and destructive local changes. Grounded knowledge retrieval enforces strict untrusted evidence boundaries.'
+          ),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+      ] : []
+    });
   }
-];
+  return userLearningStores.get(normalizedId)!;
+}
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-jarvis-passcode');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-jarvis-passcode, x-jarvis-token, x-jarvis-user-id');
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
 
-  // Passcode Protection if configured
-  const serverPasscode = process.env.JARVIS_ACCESS_PASSCODE;
-  if (serverPasscode) {
-    const providedPasscode = req.headers['x-jarvis-passcode'] || req.query?.passcode;
-    if (providedPasscode !== serverPasscode) {
-      res.status(401).json({
-        success: false,
-        error: 'PASSCODE_REQUIRED',
-        message: 'Access passcode required to access learning center.'
-      });
-      return;
-    }
+  // Validate Access & Determine User Partition
+  const auth = validateAccess(req);
+  if (!auth.authorized) {
+    res.status(auth.status || 401).json({
+      success: false,
+      error: auth.error,
+      message: auth.message
+    });
+    return;
   }
 
+  const store = getUserLearningStore(auth.userId);
   const { tab = 'all', id, export: exportFlag } = req.query;
 
   // GET: Retrieve preferences, corrections, documents, routines, or export
@@ -62,45 +78,47 @@ export default async function handler(req: any, res: any) {
       res.status(200).json({
         success: true,
         version: '1.2.0',
+        userId: auth.userId,
         exportedAt: new Date().toISOString(),
         data: {
-          preferences: preferencesStore,
-          corrections: correctionsStore,
-          documents: documentsStore,
-          routines: routinesStore
+          preferences: store.preferences,
+          corrections: store.corrections,
+          documents: store.documents,
+          routines: store.routines
         }
       });
       return;
     }
 
     if (tab === 'preferences') {
-      res.status(200).json({ success: true, preferences: preferencesStore });
+      res.status(200).json({ success: true, userId: auth.userId, preferences: store.preferences });
       return;
     }
     if (tab === 'corrections') {
-      res.status(200).json({ success: true, corrections: correctionsStore });
+      res.status(200).json({ success: true, userId: auth.userId, corrections: store.corrections });
       return;
     }
     if (tab === 'documents') {
-      res.status(200).json({ success: true, documents: documentsStore });
+      res.status(200).json({ success: true, userId: auth.userId, documents: store.documents });
       return;
     }
     if (tab === 'routines') {
-      res.status(200).json({ success: true, routines: routinesStore });
+      res.status(200).json({ success: true, userId: auth.userId, routines: store.routines });
       return;
     }
 
     res.status(200).json({
       success: true,
-      preferences: preferencesStore,
-      corrections: correctionsStore,
-      documents: documentsStore,
-      routines: routinesStore
+      userId: auth.userId,
+      preferences: store.preferences,
+      corrections: store.corrections,
+      documents: store.documents,
+      routines: store.routines
     });
     return;
   }
 
-  // POST: Add new item
+  // POST: Add new preference, correction, document, or routine
   if (req.method === 'POST') {
     let body = req.body;
     if (typeof body === 'string') {
@@ -108,6 +126,10 @@ export default async function handler(req: any, res: any) {
     }
 
     const { type, data } = body || {};
+    if (!type || !data) {
+      res.status(400).json({ success: false, error: 'Missing type or data' });
+      return;
+    }
 
     if (type === 'preference') {
       const newPref: UserPreference = {
@@ -116,10 +138,10 @@ export default async function handler(req: any, res: any) {
         key: data.key,
         value: data.value,
         enabled: data.enabled ?? true,
-        origin: data.origin || 'User Added',
+        origin: 'User Added',
         updated_at: new Date().toISOString()
       };
-      preferencesStore.push(newPref);
+      store.preferences.push(newPref);
       res.status(200).json({ success: true, item: newPref });
       return;
     }
@@ -135,15 +157,21 @@ export default async function handler(req: any, res: any) {
         tags: Array.isArray(data.tags) ? data.tags : [],
         created_at: new Date().toISOString()
       };
-      correctionsStore.push(newCorr);
+      store.corrections.push(newCorr);
       res.status(200).json({ success: true, item: newCorr });
       return;
     }
 
     if (type === 'document') {
+      const docContent = data.content || '';
+      // Enforce 5MB limit
+      if (typeof docContent === 'string' && docContent.length > 5 * 1024 * 1024) {
+        res.status(400).json({ success: false, error: 'Document content exceeds 5MB size limit.' });
+        return;
+      }
+
       const docId = `doc-${Date.now().toString(36)}`;
       const docTitle = data.title || 'Untitled Document';
-      const docContent = data.content || '';
       const chunks = chunkDocument(docId, docTitle, docContent);
 
       const newDoc: DocumentKnowledge = {
@@ -157,7 +185,7 @@ export default async function handler(req: any, res: any) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
-      documentsStore.push(newDoc);
+      store.documents.push(newDoc);
       res.status(200).json({ success: true, item: newDoc });
       return;
     }
@@ -176,7 +204,7 @@ export default async function handler(req: any, res: any) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
-      routinesStore.push(newRoutine);
+      store.routines.push(newRoutine);
       res.status(200).json({ success: true, item: newRoutine });
       return;
     }
@@ -195,57 +223,62 @@ export default async function handler(req: any, res: any) {
     const { type, id: itemId, data } = body || {};
 
     if (type === 'preference') {
-      const idx = preferencesStore.findIndex(p => p.id === itemId);
+      const idx = store.preferences.findIndex(p => p.id === itemId);
       if (idx >= 0) {
-        preferencesStore[idx] = {
-          ...preferencesStore[idx],
+        store.preferences[idx] = {
+          ...store.preferences[idx],
           ...data,
           updated_at: new Date().toISOString()
         };
-        res.status(200).json({ success: true, item: preferencesStore[idx] });
+        res.status(200).json({ success: true, item: store.preferences[idx] });
         return;
       }
     }
 
     if (type === 'correction') {
-      const idx = correctionsStore.findIndex(c => c.id === itemId);
+      const idx = store.corrections.findIndex(c => c.id === itemId);
       if (idx >= 0) {
-        correctionsStore[idx] = {
-          ...correctionsStore[idx],
+        store.corrections[idx] = {
+          ...store.corrections[idx],
           ...data
         };
-        res.status(200).json({ success: true, item: correctionsStore[idx] });
+        res.status(200).json({ success: true, item: store.corrections[idx] });
         return;
       }
     }
 
     if (type === 'document') {
-      const idx = documentsStore.findIndex(d => d.id === itemId);
+      const idx = store.documents.findIndex(d => d.id === itemId);
       if (idx >= 0) {
-        const updatedTitle = data.title ?? documentsStore[idx].title;
-        const updatedContent = data.content ?? documentsStore[idx].content;
+        const updatedTitle = data.title ?? store.documents[idx].title;
+        const updatedContent = data.content ?? store.documents[idx].content;
+        if (typeof updatedContent === 'string' && updatedContent.length > 5 * 1024 * 1024) {
+          res.status(400).json({ success: false, error: 'Document content exceeds 5MB size limit.' });
+          return;
+        }
+
         const updatedChunks = chunkDocument(itemId, updatedTitle, updatedContent);
 
-        documentsStore[idx] = {
-          ...documentsStore[idx],
+        store.documents[idx] = {
+          ...store.documents[idx],
           ...data,
           chunks: updatedChunks,
           updated_at: new Date().toISOString()
         };
-        res.status(200).json({ success: true, item: documentsStore[idx] });
+        res.status(200).json({ success: true, item: store.documents[idx] });
         return;
       }
     }
 
     if (type === 'routine') {
-      const idx = routinesStore.findIndex(r => r.id === itemId);
+      const idx = store.routines.findIndex(r => r.id === itemId);
       if (idx >= 0) {
-        routinesStore[idx] = {
-          ...routinesStore[idx],
+        store.routines[idx] = {
+          ...store.routines[idx],
           ...data,
           updated_at: new Date().toISOString()
         };
-        res.status(200).json({ success: true, item: routinesStore[idx] });
+        res.status(200).json({ success: true, item: store.routines[idx] });
         return;
       }
     }
@@ -260,25 +293,25 @@ export default async function handler(req: any, res: any) {
     const itemType = tab || req.body?.type;
 
     if (itemType === 'preferences' || itemType === 'preference') {
-      preferencesStore = preferencesStore.filter(p => p.id !== targetId);
+      store.preferences = store.preferences.filter(p => p.id !== targetId);
       res.status(200).json({ success: true, message: 'Preference deleted' });
       return;
     }
 
     if (itemType === 'corrections' || itemType === 'correction') {
-      correctionsStore = correctionsStore.filter(c => c.id !== targetId);
+      store.corrections = store.corrections.filter(c => c.id !== targetId);
       res.status(200).json({ success: true, message: 'Correction deleted' });
       return;
     }
 
     if (itemType === 'documents' || itemType === 'document') {
-      documentsStore = documentsStore.filter(d => d.id !== targetId);
+      store.documents = store.documents.filter(d => d.id !== targetId);
       res.status(200).json({ success: true, message: 'Document deleted' });
       return;
     }
 
     if (itemType === 'routines' || itemType === 'routine') {
-      routinesStore = routinesStore.filter(r => r.id !== targetId);
+      store.routines = store.routines.filter(r => r.id !== targetId);
       res.status(200).json({ success: true, message: 'Routine deleted' });
       return;
     }

@@ -1,4 +1,4 @@
-import { exec, execSync, spawn } from 'child_process';
+import { exec, execSync, execFileSync, spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -38,12 +38,11 @@ export const AUTHORIZED_FOLDERS = [
 ];
 
 /**
- * Execute AppleScript synchronously with safe timeout
+ * Execute AppleScript synchronously with safe timeout via direct process execution (no shell)
  */
 function runAppleScript(script: string, timeoutMs = 4000): string {
   try {
-    const escaped = script.replace(/"/g, '\\"');
-    const result = execSync(`osascript -e "${escaped}"`, {
+    const result = execFileSync('osascript', ['-e', script], {
       timeout: timeoutMs,
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'ignore']
@@ -114,17 +113,17 @@ export async function openApplication(appName: string): Promise<{ success: boole
   if (lower.includes('whatsapp')) {
     const whatsappAppPath = '/Applications/WhatsApp.app';
     if (fs.existsSync(whatsappAppPath)) {
-      execSync(`open -a "WhatsApp"`);
+      execFileSync('open', ['-a', 'WhatsApp']);
       return { success: true, appName: 'WhatsApp', mode: 'native', details: 'Opened native WhatsApp desktop application.' };
     } else {
-      execSync(`open "https://web.whatsapp.com"`);
+      execFileSync('open', ['https://web.whatsapp.com']);
       return { success: true, appName: 'WhatsApp Web', mode: 'web', details: 'Native WhatsApp app not found; opened WhatsApp Web in default browser.' };
     }
   }
 
   // 2. YouTube handling
   if (lower.includes('youtube')) {
-    execSync(`open "https://www.youtube.com"`);
+    execFileSync('open', ['https://www.youtube.com']);
     return { success: true, appName: 'YouTube', mode: 'web', details: 'Opened YouTube in default browser.' };
   }
 
@@ -132,10 +131,10 @@ export async function openApplication(appName: string): Promise<{ success: boole
   if (lower.includes('chrome')) {
     const chromePath = '/Applications/Google Chrome.app';
     if (fs.existsSync(chromePath)) {
-      execSync(`open -a "Google Chrome"`);
+      execFileSync('open', ['-a', 'Google Chrome']);
       return { success: true, appName: 'Google Chrome', mode: 'native', details: 'Opened Google Chrome desktop application.' };
     } else {
-      execSync(`open "https://www.google.com"`);
+      execFileSync('open', ['https://www.google.com']);
       return { success: true, appName: 'Google Chrome', mode: 'web', details: 'Opened Google in default browser.' };
     }
   }
@@ -144,11 +143,11 @@ export async function openApplication(appName: string): Promise<{ success: boole
   if (lower.includes('word') || lower.includes('textedit') || lower.includes('editor')) {
     const wordPath = '/Applications/Microsoft Word.app';
     if (fs.existsSync(wordPath) && lower.includes('word')) {
-      execSync(`open -a "Microsoft Word"`);
+      execFileSync('open', ['-a', 'Microsoft Word']);
       return { success: true, appName: 'Microsoft Word', mode: 'native', details: 'Opened Microsoft Word application.' };
     } else {
       // Use native TextEdit on macOS
-      execSync(`open -a "TextEdit"`);
+      execFileSync('open', ['-a', 'TextEdit']);
       // Create new document in TextEdit
       try {
         runAppleScript(`
@@ -166,19 +165,19 @@ export async function openApplication(appName: string): Promise<{ success: boole
 
   // 4. Notes
   if (lower.includes('note')) {
-    execSync(`open -a "Notes"`);
+    execFileSync('open', ['-a', 'Notes']);
     return { success: true, appName: 'Notes', mode: 'native', details: 'Opened Apple Notes.' };
   }
 
   // 5. General macOS application launch
   try {
-    execSync(`open -a "${cleanName}"`, { timeout: 3000 });
+    execFileSync('open', ['-a', cleanName], { timeout: 3000 });
     return { success: true, appName: cleanName, mode: 'native', details: `Successfully activated ${cleanName}.` };
   } catch (err: any) {
     // If opening by app name fails, attempt web URL or search
     if (cleanName.includes('.')) {
       const url = cleanName.startsWith('http') ? cleanName : `https://${cleanName}`;
-      execSync(`open "${url}"`);
+      execFileSync('open', [url]);
       return { success: true, appName: cleanName, mode: 'web', details: `Opened ${url} in browser.` };
     }
     throw new Error(`Application "${cleanName}" could not be opened: ${err.message}`);
@@ -194,7 +193,7 @@ export async function openBrowserAndSearch(query: string, engine: 'youtube' | 'g
     ? `https://www.youtube.com/results?search_query=${encoded}`
     : `https://www.google.com/search?q=${encoded}`;
 
-  execSync(`open "${url}"`);
+  execFileSync('open', [url]);
   logActivity('computer', 'browser_search', { query, engine, url });
 
   return {
@@ -278,7 +277,7 @@ export async function readActiveContent(): Promise<ReadContentResult> {
 
   // 1. Try to read currently highlighted text via copy
   try {
-    const originalClip = execSync('pbpaste', { encoding: 'utf8' });
+    const originalClip = execFileSync('pbpaste', [], { encoding: 'utf8' });
 
     // Send Cmd+C
     runAppleScript(`
@@ -289,7 +288,7 @@ export async function readActiveContent(): Promise<ReadContentResult> {
 
     // Wait 150ms
     await new Promise(r => setTimeout(r, 150));
-    const copiedText = execSync('pbpaste', { encoding: 'utf8' }).trim();
+    const copiedText = execFileSync('pbpaste', [], { encoding: 'utf8' }).trim();
 
     if (copiedText && copiedText !== originalClip) {
       logActivity('computer', 'read_selection', { length: copiedText.length });
@@ -380,7 +379,7 @@ export async function findAndOpenFile(query: string): Promise<FileSearchResult> 
         const fullPath = path.join(folder, bestFile);
 
         // Open the matching file
-        execSync(`open "${fullPath}"`);
+        execFileSync('open', [fullPath]);
         logActivity('computer', 'file_found_and_opened', { fullPath, folder });
 
         return {
@@ -398,10 +397,13 @@ export async function findAndOpenFile(query: string): Promise<FileSearchResult> 
 
   // 2. Spotlight search via mdfind restricted to user directory
   try {
-    const spotlightCmd = `mdfind -onlyin "${os.homedir()}/Downloads" "${primaryTerm}" | head -n 1`;
-    const res = execSync(spotlightCmd, { encoding: 'utf8', timeout: 3000 }).trim();
+    const rawRes = execFileSync('mdfind', ['-onlyin', path.join(os.homedir(), 'Downloads'), primaryTerm], {
+      encoding: 'utf8',
+      timeout: 3000
+    }).trim();
+    const res = rawRes.split('\n')[0]?.trim();
     if (res && fs.existsSync(res)) {
-      execSync(`open "${res}"`);
+      execFileSync('open', [res]);
       logActivity('computer', 'file_spotlight_opened', { filePath: res });
       return {
         found: true,
@@ -427,7 +429,7 @@ export async function findAndOpenFile(query: string): Promise<FileSearchResult> 
 export function captureScreen(savePath?: string): string {
   const dest = savePath || path.join(WORKSPACE_DIR, `screen_${Date.now()}.png`);
   try {
-    execSync(`screencapture -x "${dest}"`, { timeout: 3000 });
+    execFileSync('screencapture', ['-x', dest], { timeout: 3000 });
     logActivity('computer', 'screen_captured', { dest });
     return dest;
   } catch (err: any) {
@@ -450,7 +452,7 @@ export function captureScreen(savePath?: string): string {
 export function stopAllActions(): { speechStopped: boolean; timestamp: string } {
   let speechStopped = false;
   try {
-    execSync('killall say', { stdio: 'ignore' });
+    execFileSync('killall', ['say'], { stdio: 'ignore' });
     speechStopped = true;
   } catch {
     // say was not actively speaking
@@ -485,10 +487,10 @@ export async function createAndSaveDocument(
   // Launch target app with the saved document
   try {
     const cleanApp = appName.toLowerCase().includes('textedit') ? 'TextEdit' : appName;
-    execSync(`open -a "${cleanApp}" "${fullPath}"`, { timeout: 4000 });
+    execFileSync('open', ['-a', cleanApp, fullPath], { timeout: 4000 });
   } catch {
     try {
-      execSync(`open "${fullPath}"`);
+      execFileSync('open', [fullPath]);
     } catch {
       // ignore
     }

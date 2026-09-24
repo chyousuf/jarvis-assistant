@@ -25,12 +25,11 @@ import {
 import {
   api,
   COMPANION_URL,
-  getAIKey,
-  setAIKey,
   getAIProvider,
   setAIProvider,
   getAccessPasscode,
-  setAccessPasscode
+  setAccessPasscode,
+  getSessionToken
 } from '../services/api.js';
 
 export const ConnectionsModal: React.FC = () => {
@@ -38,14 +37,16 @@ export const ConnectionsModal: React.FC = () => {
   const [lastCheckTimes, setLastCheckTimes] = useState<Record<string, string>>({});
 
   // 1. AI Service State
-  const [aiKey, setAiKeyInput] = useState<string>(() => getAIKey());
   const [aiProvider, setAiProviderInput] = useState<string>(() => getAIProvider());
   const [serverAIStatus, setServerAIStatus] = useState<any>(null);
   const [aiTestResult, setAiTestResult] = useState<any>(null);
   const [testingAi, setTestingAi] = useState(false);
   const [showVercelGuide, setShowVercelGuide] = useState(false);
 
-  // 2. Access Passcode State
+  // 2. Authentication & Access State
+  const [authStatus, setAuthStatus] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [passcodeInput, setPasscodeInput] = useState<string>(() => getAccessPasscode());
   const [passcodeSavedNotice, setPasscodeSavedNotice] = useState(false);
 
@@ -70,6 +71,14 @@ export const ConnectionsModal: React.FC = () => {
   const checkAllConnections = async () => {
     setLoading(true);
     const now = new Date().toLocaleTimeString();
+
+    // 0. Query Auth Status
+    try {
+      const authRes = await api.getAuthStatus();
+      setAuthStatus(authRes);
+    } catch {
+      setAuthStatus(null);
+    }
 
     // 1. Query Server AI Status
     try {
@@ -105,6 +114,7 @@ export const ConnectionsModal: React.FC = () => {
     }
 
     setLastCheckTimes({
+      auth: now,
       ai: now,
       companion: now,
       email: now,
@@ -119,16 +129,41 @@ export const ConnectionsModal: React.FC = () => {
     checkAllConnections();
   }, []);
 
-  const handleSaveAIConfig = () => {
-    setAIKey(aiKey.trim());
+  const handleSaveAIProvider = () => {
     setAIProvider(aiProvider);
     checkAllConnections();
   };
 
-  const handleSavePasscode = () => {
-    setAccessPasscode(passcodeInput.trim());
-    setPasscodeSavedNotice(true);
-    setTimeout(() => setPasscodeSavedNotice(false), 2500);
+  const handleLogin = async () => {
+    setAuthLoading(true);
+    setAuthError(null);
+    try {
+      const res = await api.login(passcodeInput.trim());
+      if (res.success) {
+        setAccessPasscode(passcodeInput.trim());
+        setPasscodeSavedNotice(true);
+        setTimeout(() => setPasscodeSavedNotice(false), 2500);
+        await checkAllConnections();
+      } else {
+        setAuthError(res.message || res.error || 'Authentication rejected');
+      }
+    } catch (err: any) {
+      setAuthError(err.message || 'Authentication request failed');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    setAuthLoading(true);
+    try {
+      await api.logout();
+      setPasscodeInput('');
+      setAccessPasscode('');
+      await checkAllConnections();
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   const handleTestAIConnection = async () => {
@@ -160,7 +195,7 @@ export const ConnectionsModal: React.FC = () => {
     setTimeout(() => setCopiedServiceCmd(false), 2000);
   };
 
-  const isAIActive = serverAIStatus?.configured || aiTestResult?.success || !!aiKey.trim();
+  const isAIActive = serverAIStatus?.configured || aiTestResult?.success;
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
@@ -253,16 +288,10 @@ export const ConnectionsModal: React.FC = () => {
                   </span>
                 )}
               </div>
-
-              {serverAIStatus?.maskedKey && (
-                <span className="font-mono text-[11px] text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
-                  Key: {serverAIStatus.maskedKey}
-                </span>
-              )}
             </div>
 
             <p className="text-slate-400 leading-relaxed text-[11px]">
-              For this personal deployment, server-side production environment secrets in Vercel (e.g. <code>GEMINI_API_KEY</code>) are the persistent credential source. They survive page refreshes, new browser sessions, and deployments.
+              For this personal deployment, server-side production environment secrets in Vercel (e.g. <code>GEMINI_API_KEY</code>) are the persistent credential source. They are never sent to or stored in the browser, surviving page refreshes and new browser sessions.
             </p>
 
             <button
@@ -287,13 +316,16 @@ export const ConnectionsModal: React.FC = () => {
             )}
           </div>
 
-          {/* Test & Client Override Controls */}
+          {/* Provider Selection & Diagnostics Verification */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
             <div className="space-y-1">
-              <label className="text-[11px] font-mono text-slate-400 uppercase">Provider Override</label>
+              <label className="text-[11px] font-mono text-slate-400 uppercase">Provider Preference</label>
               <select
                 value={aiProvider}
-                onChange={(e) => setAiProviderInput(e.target.value)}
+                onChange={(e) => {
+                  setAiProviderInput(e.target.value);
+                  setAIProvider(e.target.value);
+                }}
                 className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 outline-none focus:border-cyan-500"
               >
                 <option value="auto">Auto (Prefer Server GEMINI_API_KEY)</option>
@@ -304,32 +336,19 @@ export const ConnectionsModal: React.FC = () => {
               </select>
             </div>
 
-            <div className="sm:col-span-2 space-y-1">
-              <label className="text-[11px] font-mono text-slate-400 uppercase">
-                Client Key Override (Optional Browser Fallback)
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  placeholder={serverAIStatus?.configured ? "Using server GEMINI_API_KEY (paste here to override)" : "Paste Gemini API Key..."}
-                  value={aiKey}
-                  onChange={(e) => setAiKeyInput(e.target.value)}
-                  className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 font-mono outline-none focus:border-cyan-500"
-                />
-                <button
-                  onClick={handleSaveAIConfig}
-                  className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold shrink-0"
-                >
-                  Save Local
-                </button>
+            <div className="sm:col-span-2 space-y-1 flex flex-col justify-end">
+              <div className="flex gap-2 items-center">
                 <button
                   onClick={handleTestAIConnection}
                   disabled={testingAi}
-                  className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-jarvis-glow shrink-0 transition-all"
+                  className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-jarvis-glow transition-all"
                 >
                   <RefreshCw className={`w-3 h-3 ${testingAi ? 'animate-spin' : ''}`} />
-                  Test Real Ping
+                  Test AI Backend Connection
                 </button>
+                <span className="text-[10px] text-slate-500 font-mono">
+                  {serverAIStatus?.configured ? 'Keys loaded from server environment.' : 'Configure server secret to enable.'}
+                </span>
               </div>
             </div>
           </div>
@@ -362,7 +381,7 @@ export const ConnectionsModal: React.FC = () => {
                 <div className="space-y-1">
                   <div>Reason: {aiTestResult.errorMessage}</div>
                   <div className="text-[10px] text-rose-300/80">
-                    Fix: Verify your API key in Vercel environment variables or enter an active key above.
+                    Fix: Set GEMINI_API_KEY in your Vercel project environment variables and redeploy.
                   </div>
                 </div>
               )}
@@ -370,49 +389,102 @@ export const ConnectionsModal: React.FC = () => {
           )}
         </div>
 
-        {/* 2. Public Abuse Protection & Passcode Card */}
+        {/* 2. Public Abuse Protection & Signed Session Card */}
         <div className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3">
           <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
             <div className="flex items-center gap-2">
               <Lock className="w-4 h-4 text-cyan-400" />
               <h3 className="text-sm font-bold font-mono text-slate-100">
-                2. Deployment Access Passcode
+                2. Deployment Access &amp; Owner Session
               </h3>
             </div>
             <span
-              className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
-                serverAIStatus?.passcodeRequired
+              className={`text-[10px] font-mono px-2.5 py-0.5 rounded-full flex items-center gap-1 font-semibold ${
+                authStatus?.authenticated
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  : authStatus?.passcodeRequired
                   ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                  : 'bg-slate-800 text-slate-400 border border-slate-700'
+                  : authStatus?.environment === 'production' && !authStatus?.configured
+                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                  : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
               }`}
             >
-              {serverAIStatus?.passcodeRequired ? 'PASSCODE ENFORCED' : 'OPEN ACCESS'}
+              {authStatus?.authenticated ? (
+                <>
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  <span>AUTHENTICATED OWNER</span>
+                </>
+              ) : authStatus?.passcodeRequired ? (
+                <>
+                  <Lock className="w-3 h-3 text-amber-400" />
+                  <span>PASSCODE REQUIRED</span>
+                </>
+              ) : authStatus?.environment === 'production' && !authStatus?.configured ? (
+                <>
+                  <AlertCircle className="w-3 h-3 text-rose-400" />
+                  <span>LOCKED (FAIL-CLOSED)</span>
+                </>
+              ) : (
+                'LOCAL DEV (OWNER GRANTED)'
+              )}
             </span>
           </div>
 
           <p className="text-xs text-slate-400 leading-relaxed">
-            Protects your paid AI API key from abuse by public web visitors. If <code>JARVIS_ACCESS_PASSCODE</code> is set in Vercel, requests must supply this passcode.
+            Protects your paid AI API key and private personal memory from unauthorized public abuse. Authenticating issues an HMAC-SHA256 signed session token stored in an HTTP-only cookie.
           </p>
 
-          <div className="flex gap-2">
-            <input
-              type="password"
-              placeholder="Enter access passcode..."
-              value={passcodeInput}
-              onChange={(e) => setPasscodeInput(e.target.value)}
-              className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 font-mono outline-none focus:border-cyan-500"
-            />
-            <button
-              onClick={handleSavePasscode}
-              className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold"
-            >
-              Save Passcode
-            </button>
-          </div>
+          {authStatus?.authenticated ? (
+            <div className="p-3 bg-emerald-950/20 border border-emerald-500/30 rounded-xl space-y-2 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-emerald-300 font-mono font-semibold flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  Authenticated as Owner ({authStatus.userId || 'owner'})
+                </span>
+                <button
+                  onClick={handleLogout}
+                  disabled={authLoading}
+                  className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono"
+                >
+                  {authLoading ? 'Signing out...' : 'Sign Out'}
+                </button>
+              </div>
+              <div className="text-[11px] text-slate-400">
+                You have full access to chat, memory, documents, routines, and desktop automation.
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  placeholder="Enter JARVIS access passcode..."
+                  value={passcodeInput}
+                  onChange={(e) => setPasscodeInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                  className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 font-mono outline-none focus:border-cyan-500"
+                />
+                <button
+                  onClick={handleLogin}
+                  disabled={authLoading}
+                  className="px-4 py-2 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold shrink-0 transition-colors"
+                >
+                  {authLoading ? 'Verifying...' : 'Sign In as Owner'}
+                </button>
+              </div>
 
-          {passcodeSavedNotice && (
-            <div className="text-[11px] text-emerald-400 font-mono">
-              ✓ Passcode saved to browser. It will be sent with all requests.
+              {authError && (
+                <div className="text-[11px] text-rose-400 font-mono flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  <span>{authError}</span>
+                </div>
+              )}
+
+              {passcodeSavedNotice && (
+                <div className="text-[11px] text-emerald-400 font-mono">
+                  ✓ Session authenticated successfully.
+                </div>
+              )}
             </div>
           )}
         </div>

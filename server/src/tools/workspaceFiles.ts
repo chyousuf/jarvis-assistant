@@ -18,9 +18,19 @@ export function resolveSafePath(relativePath: string): string {
   // Normalize and resolve path relative to WORKSPACE_DIR
   const resolved = path.resolve(WORKSPACE_DIR, relativePath);
 
-  // Security check: Must start with WORKSPACE_DIR
-  if (!resolved.startsWith(WORKSPACE_DIR)) {
+  // Security check: Path must not escape WORKSPACE_DIR boundary
+  const rel = path.relative(WORKSPACE_DIR, resolved);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
     throw new Error(`Security Violation: Path "${relativePath}" resolves outside approved workspace boundary (${WORKSPACE_DIR}). Access denied.`);
+  }
+
+  // Symlink escape protection: Verify canonical path does not escape sandbox
+  if (fs.existsSync(resolved)) {
+    const realPath = fs.realpathSync(resolved);
+    const realRel = path.relative(WORKSPACE_DIR, realPath);
+    if (realRel.startsWith('..') || path.isAbsolute(realRel)) {
+      throw new Error(`Security Violation: Symlink at "${relativePath}" points outside approved workspace boundary. Access denied.`);
+    }
   }
 
   return resolved;

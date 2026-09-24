@@ -28,6 +28,14 @@ if (!pairingToken) {
   }
 }
 
+function safeCompareTokens(provided?: string, expected?: string): boolean {
+  if (!provided || !expected) return false;
+  const pBuf = Buffer.from(provided);
+  const eBuf = Buffer.from(expected);
+  if (pBuf.length !== eBuf.length) return false;
+  return crypto.timingSafeEqual(pBuf, eBuf);
+}
+
 const router = Router();
 
 // Authenticated verification endpoint for Setup Wizard
@@ -35,7 +43,7 @@ router.get('/verify', (req: Request, res: Response) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader ? authHeader.replace(/^Bearer\s+/i, '').trim() : '';
 
-  if (pairingToken && token !== pairingToken) {
+  if (pairingToken && !safeCompareTokens(token, pairingToken)) {
     res.status(401).json({
       success: false,
       error: 'Invalid pairing token. Please check ~/.jarvis_token or the terminal where JARVIS is running.'
@@ -87,7 +95,7 @@ export const authenticateCompanion = (req: Request, res: Response, next: NextFun
     }
 
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-    if (token !== pairingToken) {
+    if (!safeCompareTokens(token, pairingToken)) {
       res.status(403).json({
         error: 'Invalid companion pairing token. Check ~/.jarvis_token or the JARVIS terminal.'
       });

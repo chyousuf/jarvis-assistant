@@ -1,10 +1,12 @@
 import aiHandler from './ai.js';
+import authHandler from './auth.js';
+import { validateAccess } from './authService.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-ai-api-key, x-ai-provider, x-jarvis-passcode');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-jarvis-passcode, x-jarvis-token, x-jarvis-user-id');
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
@@ -14,11 +16,63 @@ export default async function handler(req: any, res: any) {
   const url = req.url || '';
   const path = url.split('?')[0].replace(/^\/api\/?/, '');
 
+  if (path.startsWith('auth')) {
+    return authHandler(req, res);
+  }
+
   if (path.startsWith('ai')) {
     return aiHandler(req, res);
   }
 
-  // Sub-route handling
+  // Public status and health checks
+  if (path.startsWith('health')) {
+    res.status(200).json({
+      status: 'online',
+      assistant: 'J.A.R.V.I.S.',
+      version: '1.2.0',
+      timestamp: new Date().toISOString()
+    });
+    return;
+  }
+
+  if (path.startsWith('computer/status')) {
+    // When queried on Vercel without local companion
+    res.status(200).json({
+      success: true,
+      companionConnected: false,
+      os: {
+        platform: 'cloud-serverless',
+        isMacOS: false,
+        osRelease: 'Vercel Serverless Function',
+        hasAccessibility: false,
+        hasAutomation: false,
+        hasScreenCapture: false,
+        hasSpeechSynthesis: false
+      },
+      activeWindow: {
+        frontmostApp: 'Companion Disconnected',
+        windowTitle: 'Run `npm run companion` on Mac to pair',
+        isBrowser: false,
+        isEditor: false,
+        isCommunication: false
+      },
+      authorizedFolders: []
+    });
+    return;
+  }
+
+  // Gate all private routes behind access validation
+  const auth = validateAccess(req);
+  if (!auth.authorized) {
+    res.status(auth.status || 401).json({
+      success: false,
+      error: auth.error,
+      message: auth.message
+    });
+    return;
+  }
+
+  // Private Sub-route handling
   if (path.startsWith('contacts')) {
     res.status(200).json({
       success: true,

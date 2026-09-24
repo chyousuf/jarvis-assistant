@@ -18,6 +18,7 @@ import companionRouter, { pairingToken, TOKEN_FILE } from './routes/companion.js
 import voiceRouter from './routes/voice.js';
 import aiRouter from './routes/ai.js';
 import { learningRouter } from './routes/learning.js';
+import authRouter from './routes/auth.js';
 import { subscribeToTaskEvents } from './tasks/taskRunner.js';
 import { pollDueReminders } from './tools/reminders.js';
 
@@ -38,7 +39,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   }
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-ai-api-key, x-ai-provider, x-jarvis-passcode');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-jarvis-passcode, x-jarvis-token, x-jarvis-user-id');
   res.setHeader('Access-Control-Allow-Private-Network', 'true');
 
   if (req.method === 'OPTIONS') {
@@ -71,6 +72,7 @@ app.get('/api/activity', (_req: Request, res: Response) => {
 });
 
 // Mount Routes
+app.use('/api/auth', authRouter);
 app.use('/api/chat', chatRouter);
 app.use('/api/tasks', tasksRouter);
 app.use('/api/reminders', remindersRouter);

@@ -1,6 +1,7 @@
 import { resolveAIConfig, executeAIConversation, ChatMessage, BASE_SYSTEM_INSTRUCTION } from './aiService.js';
 import { resolveArithmeticWithContext } from './calculator.js';
 import { buildLearningSystemInstruction, retrieveRelevantPassages, UserCorrection, DocumentChunk } from './learningService.js';
+import { validateAccess } from './authService.js';
 
 // In-memory sliding-window IP rate limiter
 const ipRequestWindow = new Map<string, number[]>();
@@ -26,7 +27,7 @@ export default async function handler(req: any, res: any) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-ai-api-key, x-ai-provider, x-jarvis-passcode');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-jarvis-passcode, x-jarvis-token, x-jarvis-user-id');
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
@@ -44,18 +45,15 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  // Passcode Protection (if JARVIS_ACCESS_PASSCODE is set on server)
-  const serverPasscode = process.env.JARVIS_ACCESS_PASSCODE;
-  if (serverPasscode) {
-    const providedPasscode = req.headers['x-jarvis-passcode'] || req.query?.passcode;
-    if (providedPasscode !== serverPasscode) {
-      res.status(401).json({
-        success: false,
-        error: 'PASSCODE_REQUIRED',
-        message: 'This personal JARVIS deployment is protected. Please enter the access passcode in the Connections tab.'
-      });
-      return;
-    }
+  // Access validation (Signed session token or passcode, fails closed in production)
+  const auth = validateAccess(req);
+  if (!auth.authorized) {
+    res.status(auth.status || 401).json({
+      success: false,
+      error: auth.error,
+      message: auth.message
+    });
+    return;
   }
 
   // GET /api/chat/history
@@ -105,6 +103,15 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
+    if (message.length > 20000) {
+      res.status(400).json({
+        success: false,
+        error: 'PAYLOAD_TOO_LARGE',
+        message: 'Message exceeds maximum allowed length of 20,000 characters.'
+      });
+      return;
+    }
+
     const trimmed = message.trim();
     const lower = trimmed.toLowerCase();
     const jarvisMsgId = `msg-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
@@ -124,9 +131,8 @@ export default async function handler(req: any, res: any) {
       lower === 'help';
 
     if (isGreeting) {
-      const clientKey = req.headers['x-ai-api-key'] || body?.aiApiKey;
       const clientProvider = req.headers['x-ai-provider'] || body?.aiProvider;
-      const aiConfig = resolveAIConfig(clientKey, clientProvider);
+      const aiConfig = resolveAIConfig(undefined, clientProvider);
 
       if (!aiConfig) {
         const isUrdu = /salam|alaikum|aoa|haal|kaise|kaisay/i.test(trimmed);
@@ -501,9 +507,8 @@ export default async function handler(req: any, res: any) {
     // ==========================================
     // 2. REAL AI BACKEND FOR ORDINARY CONVERSATION
     // ==========================================
-    const clientKey = req.headers['x-ai-api-key'] || body?.aiApiKey;
     const clientProvider = req.headers['x-ai-provider'] || body?.aiProvider;
-    const aiConfig = resolveAIConfig(clientKey, clientProvider);
+    const aiConfig = resolveAIConfig(undefined, clientProvider);
 
     if (aiConfig) {
       try {

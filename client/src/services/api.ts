@@ -191,15 +191,32 @@ export function setCompanionToken(token: string) {
   }
 }
 
-export function getAIKey(): string {
-  return localStorage.getItem('jarvis_ai_key') || '';
+// Proactively purge legacy client key from localStorage
+try {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    window.localStorage.removeItem('jarvis_ai_key');
+  }
+} catch {
+  // ignore
 }
 
-export function setAIKey(key: string) {
-  if (key) {
-    localStorage.setItem('jarvis_ai_key', key.trim());
-  } else {
-    localStorage.removeItem('jarvis_ai_key');
+export function getSessionToken(): string {
+  try {
+    return localStorage.getItem('jarvis_session_token') || '';
+  } catch {
+    return '';
+  }
+}
+
+export function setSessionToken(token: string) {
+  try {
+    if (token) {
+      localStorage.setItem('jarvis_session_token', token.trim());
+    } else {
+      localStorage.removeItem('jarvis_session_token');
+    }
+  } catch {
+    // ignore
   }
 }
 
@@ -430,14 +447,19 @@ export async function fetchJson<T = any>(url: string, options: RequestInit = {})
     headers.set('Content-Type', 'application/json');
   }
 
-  // Inject AI Key and Provider if available
-  const aiKey = getAIKey();
-  if (aiKey && !headers.has('x-ai-api-key')) {
-    headers.set('x-ai-api-key', aiKey);
-  }
+  // Inject Provider if available
   const aiProvider = getAIProvider();
   if (aiProvider && !headers.has('x-ai-provider')) {
     headers.set('x-ai-provider', aiProvider);
+  }
+
+  // Inject Signed Session Token if available
+  const sessionToken = getSessionToken();
+  if (sessionToken && !headers.has('x-jarvis-token')) {
+    headers.set('x-jarvis-token', sessionToken);
+    if (!headers.has('Authorization')) {
+      headers.set('Authorization', `Bearer ${sessionToken}`);
+    }
   }
 
   // Inject Access Passcode if configured
@@ -448,7 +470,7 @@ export async function fetchJson<T = any>(url: string, options: RequestInit = {})
 
   let res: Response;
   try {
-    res = await fetch(url, { ...options, headers });
+    res = await fetch(url, { ...options, headers, credentials: 'include' });
   } catch (netErr: any) {
     throw new Error(`Network connection error: ${netErr.message || 'Server unreachable'}`);
   }
@@ -1102,6 +1124,44 @@ export const api = {
       return await fetchJson(`${COMPANION_URL}/api/computer/screen`, { method: 'POST' });
     } catch {
       return fetchJson(`${API_BASE}/computer/screen`, { method: 'POST' });
+    }
+  },
+
+  async getAuthStatus(): Promise<{
+    success: boolean;
+    authenticated: boolean;
+    userId?: string;
+    role?: string;
+    passcodeRequired?: boolean;
+    configured?: boolean;
+    environment?: string;
+    message?: string;
+  }> {
+    return fetchJson(`${API_BASE}/auth/status`);
+  },
+
+  async login(passcode: string): Promise<{
+    success: boolean;
+    token?: string;
+    session?: { userId: string; role: string; expiresAt: number };
+    error?: string;
+    message?: string;
+  }> {
+    const res = await fetchJson<any>(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      body: JSON.stringify({ passcode })
+    });
+    if (res.success && res.token) {
+      setSessionToken(res.token);
+    }
+    return res;
+  },
+
+  async logout(): Promise<void> {
+    try {
+      await fetchJson(`${API_BASE}/auth/logout`, { method: 'POST' });
+    } finally {
+      setSessionToken('');
     }
   }
 };

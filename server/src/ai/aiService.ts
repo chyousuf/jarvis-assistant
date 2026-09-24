@@ -195,12 +195,15 @@ async function callAnthropic(apiKey: string, messages: ChatMessage[], modelName 
  * Resolve AI configuration from request headers, client payload, or environment
  */
 export function resolveAIConfig(customKey?: string, customProvider?: string): AIServiceConfig | null {
+  const isProd = !!process.env.VERCEL || (process.env.NODE_ENV === 'production' && !process.env.ALLOW_CLIENT_AI_KEY);
+  const effectiveCustomKey = isProd ? undefined : customKey;
+
   const apiKey =
-    customKey ||
     process.env.GEMINI_API_KEY ||
     process.env.OPENAI_API_KEY ||
     process.env.ANTHROPIC_API_KEY ||
     process.env.GROQ_API_KEY ||
+    effectiveCustomKey ||
     '';
 
   if (!apiKey) {

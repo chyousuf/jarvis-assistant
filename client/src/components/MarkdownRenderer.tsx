@@ -6,6 +6,27 @@ interface MarkdownRendererProps {
   className?: string;
 }
 
+export function isSafeUrl(url: string): boolean {
+  if (!url) return false;
+  const trimmed = url.trim().toLowerCase();
+  if (
+    trimmed.startsWith('javascript:') ||
+    trimmed.startsWith('data:') ||
+    trimmed.startsWith('vbscript:') ||
+    trimmed.startsWith('file:')
+  ) {
+    return false;
+  }
+  return (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('mailto:') ||
+    trimmed.startsWith('tel:') ||
+    trimmed.startsWith('/') ||
+    trimmed.startsWith('#')
+  );
+}
+
 /**
  * Format inline markdown tokens: bold, italic, code, links
  */
@@ -35,18 +56,30 @@ function renderInlineText(text: string): React.ReactNode[] {
         </code>
       );
     } else if (link) {
-      elements.push(
-        <a
-          key={`link-${match.index}`}
-          href={linkUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-cyan-400 hover:text-cyan-300 underline font-medium inline-flex items-center gap-1 mx-0.5 break-all"
-        >
-          <span>{linkText}</span>
-          <ExternalLink className="w-3 h-3 shrink-0" />
-        </a>
-      );
+      if (isSafeUrl(linkUrl)) {
+        elements.push(
+          <a
+            key={`link-${match.index}`}
+            href={linkUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-cyan-400 hover:text-cyan-300 underline font-medium inline-flex items-center gap-1 mx-0.5 break-all"
+          >
+            <span>{linkText}</span>
+            <ExternalLink className="w-3 h-3 shrink-0" />
+          </a>
+        );
+      } else {
+        elements.push(
+          <span
+            key={`unsafe-link-${match.index}`}
+            className="text-slate-400 font-mono text-[11px] line-through"
+            title="Unsafe link URI scheme neutralized"
+          >
+            {linkText}
+          </span>
+        );
+      }
     } else if (bold) {
       elements.push(
         <strong key={`bold-${match.index}`} className="font-bold text-slate-100">
