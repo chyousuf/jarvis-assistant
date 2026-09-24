@@ -192,6 +192,16 @@ export const App: React.FC = () => {
 
       setMessages((prev) => [...prev, assistantMessage]);
 
+      // Auto-open requested URLs (e.g. YouTube playback) in user's browser & dispatch to companion
+      if (response.openUrl) {
+        try {
+          window.open(response.openUrl, '_blank', 'noopener,noreferrer');
+        } catch (e) {
+          console.warn('Popup blocked:', e);
+        }
+        api.computerSearch(response.searchQuery || text, 'youtube').catch(() => {});
+      }
+
       if (response.task) {
         setActiveTask(response.task);
         api.getTasks().then(setTasks);

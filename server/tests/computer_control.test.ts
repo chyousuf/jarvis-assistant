@@ -59,6 +59,27 @@ test('Orchestrator Computer Control: Open YouTube and search intent', async () =
   assert.strictEqual(res.needsClarification, false);
   assert.ok(res.reply.includes('YouTube'));
   assert.ok(res.reply.includes('cooking videos'));
+  assert.ok(res.openUrl && res.openUrl.includes('youtube.com'));
+});
+
+test('Orchestrator Computer Control: Urdu YouTube playback "youtube pe Ali Maula chalao"', async () => {
+  const res = await orchestrator.processUserMessage('youtube pe Ali Maula chalao');
+  assert.strictEqual(res.needsClarification, false);
+  assert.ok(res.reply.includes('YouTube'));
+  assert.ok(res.reply.includes('Ali Maula'));
+  assert.ok(res.openUrl && res.openUrl.includes('Ali%20Maula'));
+});
+
+test('Orchestrator Computer Control: Contextual YouTube playback "play karo youtube pa"', async () => {
+  const history = [
+    { role: 'user', content: 'Nusrat Fateh Ali Khan ka kalam Ali Maula sunao' },
+    { role: 'assistant', content: 'Nusrat Fateh Ali Khan ka mashhoor kalam "Ali Maula" aik behtareen sufiana qawwali hai.' }
+  ];
+  const res = await orchestrator.processUserMessage('play karo youtube pa', history);
+  assert.strictEqual(res.needsClarification, false);
+  assert.ok(res.reply.includes('YouTube'));
+  assert.ok(res.reply.includes('Ali Maula'));
+  assert.ok(res.openUrl && res.openUrl.includes('Ali%20Maula'));
 });
 
 test('Orchestrator Computer Control: Write text into active field intent', async () => {

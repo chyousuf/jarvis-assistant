@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Copy, Check, ExternalLink } from 'lucide-react';
+import { Copy, Check, ExternalLink, Play } from 'lucide-react';
 
 interface MarkdownRendererProps {
   content: string;
@@ -57,14 +57,20 @@ function renderInlineText(text: string): React.ReactNode[] {
       );
     } else if (link) {
       if (isSafeUrl(linkUrl)) {
+        const isYouTube = linkUrl.includes('youtube.com') || linkUrl.includes('youtu.be');
         elements.push(
           <a
             key={`link-${match.index}`}
             href={linkUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-cyan-400 hover:text-cyan-300 underline font-medium inline-flex items-center gap-1 mx-0.5 break-all"
+            className={
+              isYouTube
+                ? "inline-flex items-center gap-1.5 px-3 py-1.5 my-1 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/40 text-xs font-semibold shadow-sm transition-all"
+                : "text-cyan-400 hover:text-cyan-300 underline font-medium inline-flex items-center gap-1 mx-0.5 break-all"
+            }
           >
+            {isYouTube && <Play className="w-3.5 h-3.5 fill-red-400 text-red-400 shrink-0" />}
             <span>{linkText}</span>
             <ExternalLink className="w-3 h-3 shrink-0" />
           </a>

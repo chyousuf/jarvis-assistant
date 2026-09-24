@@ -23,6 +23,93 @@ function checkRateLimit(ip: string): boolean {
   return true;
 }
 
+export function extractYouTubeQuery(prompt: string, history: Array<{ role: string; content?: string }> = []): string {
+  const isFiller = (t: string) => {
+    const s = t.trim().toLowerCase();
+    return !s || [
+      'karo', 'it', 'this', 'ise', 'yeh', 'that', 'something', 'video', 'song',
+      'youtube', 'chalao', 'lagao', 'play', 'kholo', 'open', 'pa', 'pe', 'par',
+      'on', 'in', 'at', 'to', 'for', 'ko', 'se', 'sunao'
+    ].includes(s);
+  };
+
+  const cleanEntity = (t: string) =>
+    t.replace(/[^\w\s\u0600-\u06FF\-]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // 1. Direct patterns in prompt
+  let match = prompt.match(/(?:play|search|chalao|lagao|open)\s+(.+?)\s+(?:on|in|pe|pa|par)\s+youtube/i);
+  if (match && !isFiller(match[1])) {
+    const q = cleanEntity(match[1]);
+    if (q) return q;
+  }
+
+  match = prompt.match(/youtube\s+(?:pe|pa|par)\s+(.+?)(?:\s+(?:chalao|lagao|play|kholo|sunao))?$/i);
+  if (match && !isFiller(match[1])) {
+    const q = cleanEntity(match[1]);
+    if (q && !['chalao', 'lagao', 'play', 'karo', 'open', 'kholo'].includes(q.toLowerCase())) {
+      return q;
+    }
+  }
+
+  match = prompt.match(/(?:open\s+)?youtube\s+(?:and\s+)?(?:search|play)\s*(?:for\s+)?(.+)/i);
+  if (match && !isFiller(match[1])) {
+    const q = cleanEntity(match[1]);
+    if (q) return q;
+  }
+
+  match = prompt.match(/(?:play|chalao)\s*(?:karo)?\s*(?:on|pe|pa|par)?\s*youtube(?:\s+(?:pa|pe|par))?\s+(.+)/i);
+  if (match && !isFiller(match[1])) {
+    const q = cleanEntity(match[1]);
+    if (q) return q;
+  }
+
+  // 2. Fallback to conversation history (context-aware, e.g. "play karo youtube pa")
+  if (history && history.length > 0) {
+    for (let i = history.length - 1; i >= 0; i--) {
+      const msg = history[i];
+      if (!msg?.content) continue;
+      const content = msg.content;
+
+      // Check if message has quoted song or title: 'Ali Maula' or "Ali Maula"
+      const quoted = content.match(/['"“](.+?)['"”]/);
+      if (quoted && quoted[1].trim().length > 2 && quoted[1].trim().length < 80) {
+        return cleanEntity(quoted[1]);
+      }
+
+      // Check user message before current one
+      if (msg.role === 'user') {
+        const cleaned = content
+          .replace(/https?:\/\/\S+/gi, '')
+          .replace(/(?:play|karo|chalao|lagao|sunao|dekho|batao|kholo|pa|pe|par|on|in|to|for|and|search|youtube|please|can\s+you)\b/gi, '')
+          .replace(/[^\w\s\u0600-\u06FF\-]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (cleaned && cleaned.length > 2 && cleaned.length < 80) {
+          return cleaned;
+        }
+      }
+
+      // Assistant message: extract topic / title from first line
+      if (msg.role === 'assistant' || msg.role === 'model') {
+        const lines = content.split('\n').map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith('http') && !l.startsWith('⚠️'));
+        for (const line of lines.slice(0, 3)) {
+          const stripped = line.replace(/[#*`_>]/g, '').trim();
+          const cleaned = stripped
+            .replace(/(?:here\s+is|this\s+is|playing|opening|certainly|sure)\b/gi, '')
+            .replace(/[^\w\s\u0600-\u06FF\-]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (cleaned && cleaned.length > 3 && cleaned.length < 80) {
+            return cleaned;
+          }
+        }
+      }
+    }
+  }
+
+  return '';
+}
+
 export default async function handler(req: any, res: any) {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -194,6 +281,56 @@ export default async function handler(req: any, res: any) {
         reply: `${calcResult.result}\n\n*Calculation: ${calcResult.explanation}*`,
         audioText: `${calcResult.result}. ${calcResult.explanation}.`,
         needsClarification: false,
+        conversationId
+      });
+      return;
+    }
+
+    // ==========================================
+    // WORKFLOW 0: YouTube Playback & Search (Bilingual English & Urdu)
+    // "play karo youtube pa", "youtube pe chalao", "play Ali Maula on youtube",
+    // "open youtube and search for cooking videos", "play on youtube", etc.
+    // ==========================================
+    const isYouTubeIntent = !/^(?:what|why|how|who|is|are|tell\s+me\s+about|explain)\b/i.test(trimmed) &&
+      (/(?:play|listen|watch|suno|dekho|chalao|lagao)\b.*?\byoutube\b/i.test(trimmed) ||
+       /youtube\b.*?(?:play|search|chalao|lagao|kholo|par|pe|pa)\b/i.test(trimmed) ||
+       /^(?:play|chalao|lagao)\s+(?:karo|this|it)?\s*(?:on|pe|pa|par|in)?\s*youtube/i.test(trimmed) ||
+       /^(?:open\s+youtube|youtube\s+kholo)/i.test(trimmed));
+
+    if (isYouTubeIntent) {
+      const query = extractYouTubeQuery(trimmed, history);
+      const isDirectHome = !query;
+      const youtubeUrl = isDirectHome
+        ? 'https://www.youtube.com'
+        : `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+
+      const title = query ? `YouTube: ${query}` : 'Open YouTube';
+      const reply = query
+        ? `▶️ **Opening YouTube**: Playing **"${query}"** on YouTube.\n\n[▶ Play on YouTube](${youtubeUrl})\n\n*Opening video in your browser...*`
+        : `▶️ **Opening YouTube**\n\n[▶ Open YouTube](${youtubeUrl})\n\n*Opening YouTube in your browser...*`;
+      const audioText = query ? `Opening ${query} on YouTube.` : 'Opening YouTube.';
+
+      res.status(200).json({
+        success: true,
+        messageId: jarvisMsgId,
+        reply,
+        audioText,
+        openUrl: youtubeUrl,
+        searchQuery: query || undefined,
+        needsClarification: false,
+        task: {
+          id: `task-${Date.now().toString(36)}`,
+          title,
+          description: query ? `Play "${query}" on YouTube` : 'Launch YouTube',
+          status: 'completed',
+          progress: 100,
+          steps: [
+            { id: 's1', name: query ? `Locate "${query}"` : 'Connect to YouTube', status: 'completed' },
+            { id: 's2', name: 'Open YouTube stream', status: 'completed' }
+          ],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
         conversationId
       });
       return;
@@ -561,6 +698,20 @@ export default async function handler(req: any, res: any) {
 
         const aiResult = await executeAIConversation(contextMessages, aiConfig);
 
+        // Detect YouTube or media links in AI response to auto-open
+        let openUrl: string | undefined;
+        let searchQuery: string | undefined;
+        const ytLinkMatch = aiResult.reply.match(/https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=[\w-]+|results\?search_query=[^\s\)\"\'<>]+)|youtu\.be\/[\w-]+)/i);
+        if (ytLinkMatch) {
+          openUrl = ytLinkMatch[0];
+        } else if (/(?:play|chalao|lagao|watch|listen|suno)\b/i.test(trimmed) && /(?:youtube|song|music|video|qawwali|naat)\b/i.test(trimmed)) {
+          const q = extractYouTubeQuery(trimmed, history);
+          if (q) {
+            searchQuery = q;
+            openUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+          }
+        }
+
         res.status(200).json({
           success: true,
           messageId: jarvisMsgId,
@@ -568,6 +719,8 @@ export default async function handler(req: any, res: any) {
           audioText: aiResult.reply,
           provider: aiResult.provider,
           model: aiResult.model,
+          openUrl,
+          searchQuery,
           needsClarification: false,
           conversationId,
           appliedCorrection: appliedCorrection ? {

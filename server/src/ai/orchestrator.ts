@@ -38,6 +38,92 @@ export interface OrchestrationResult {
     snippet: string;
     fullContent: string;
   }>;
+  openUrl?: string;
+  searchQuery?: string;
+}
+
+export function extractYouTubeQuery(prompt: string, history: Array<{ role: string; content?: string }> = []): string {
+  const isFiller = (t: string) => {
+    const s = t.trim().toLowerCase();
+    return !s || [
+      'karo', 'it', 'this', 'ise', 'yeh', 'that', 'something', 'video', 'song',
+      'youtube', 'chalao', 'lagao', 'play', 'kholo', 'open', 'pa', 'pe', 'par',
+      'on', 'in', 'at', 'to', 'for', 'ko', 'se', 'sunao'
+    ].includes(s);
+  };
+
+  const cleanEntity = (t: string) =>
+    t.replace(/[^\w\s\u0600-\u06FF\-]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // 1. Direct patterns in prompt
+  let match = prompt.match(/(?:play|search|chalao|lagao|open)\s+(.+?)\s+(?:on|in|pe|pa|par)\s+youtube/i);
+  if (match && !isFiller(match[1])) {
+    const q = cleanEntity(match[1]);
+    if (q) return q;
+  }
+
+  match = prompt.match(/youtube\s+(?:pe|pa|par)\s+(.+?)(?:\s+(?:chalao|lagao|play|kholo|sunao))?$/i);
+  if (match && !isFiller(match[1])) {
+    const q = cleanEntity(match[1]);
+    if (q && !['chalao', 'lagao', 'play', 'karo', 'open', 'kholo'].includes(q.toLowerCase())) {
+      return q;
+    }
+  }
+
+  match = prompt.match(/(?:open\s+)?youtube\s+(?:and\s+)?(?:search|play)\s*(?:for\s+)?(.+)/i);
+  if (match && !isFiller(match[1])) {
+    const q = cleanEntity(match[1]);
+    if (q) return q;
+  }
+
+  match = prompt.match(/(?:play|chalao)\s*(?:karo)?\s*(?:on|pe|pa|par)?\s*youtube(?:\s+(?:pa|pe|par))?\s+(.+)/i);
+  if (match && !isFiller(match[1])) {
+    const q = cleanEntity(match[1]);
+    if (q) return q;
+  }
+
+  // 2. Fallback to conversation history (context-aware, e.g. "play karo youtube pa")
+  if (history && history.length > 0) {
+    for (let i = history.length - 1; i >= 0; i--) {
+      const msg = history[i];
+      if (!msg?.content) continue;
+      const content = msg.content;
+
+      const quoted = content.match(/['"“](.+?)['"”]/);
+      if (quoted && quoted[1].trim().length > 2 && quoted[1].trim().length < 80) {
+        return cleanEntity(quoted[1]);
+      }
+
+      if (msg.role === 'user') {
+        const cleaned = content
+          .replace(/https?:\/\/\S+/gi, '')
+          .replace(/(?:play|karo|chalao|lagao|sunao|dekho|batao|kholo|pa|pe|par|on|in|to|for|and|search|youtube|please|can\s+you)\b/gi, '')
+          .replace(/[^\w\s\u0600-\u06FF\-]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (cleaned && cleaned.length > 2 && cleaned.length < 80) {
+          return cleaned;
+        }
+      }
+
+      if (msg.role === 'assistant' || msg.role === 'model') {
+        const lines = content.split('\n').map(l => l.trim()).filter(l => l.length > 0 && !l.startsWith('http') && !l.startsWith('⚠️'));
+        for (const line of lines.slice(0, 3)) {
+          const stripped = line.replace(/[#*`_>]/g, '').trim();
+          const cleaned = stripped
+            .replace(/(?:here\s+is|this\s+is|playing|opening|certainly|sure)\b/gi, '')
+            .replace(/[^\w\s\u0600-\u06FF\-]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (cleaned && cleaned.length > 3 && cleaned.length < 80) {
+            return cleaned;
+          }
+        }
+      }
+    }
+  }
+
+  return '';
 }
 
 export class JarvisOrchestrator {
@@ -223,15 +309,30 @@ export class JarvisOrchestrator {
       };
     }
 
-    // 2. Computer Control: Open YouTube and Search
-    const ytMatch = text.match(/open\s+youtube\s+(?:and\s+)?search\s+(?:for\s+)?(.+)/i);
-    if (ytMatch) {
-      const query = ytMatch[1].trim();
-      const res = await computerTools.openSearch(query, 'youtube');
+    // 2. Computer Control: Open YouTube and Search / Play (Bilingual English & Urdu)
+    const isYouTubeIntent = !/^(?:what|why|how|who|is|are|tell\s+me\s+about|explain)\b/i.test(text.trim()) &&
+      (/(?:play|listen|watch|suno|dekho|chalao|lagao)\b.*?\byoutube\b/i.test(text) ||
+       /youtube\b.*?(?:play|search|chalao|lagao|kholo|par|pe|pa)\b/i.test(text) ||
+       /^(?:play|chalao|lagao)\s+(?:karo|this|it)?\s*(?:on|pe|pa|par|in)?\s*youtube/i.test(text) ||
+       /^(?:open\s+youtube|youtube\s+kholo)/i.test(text));
+
+    if (isYouTubeIntent) {
+      const query = extractYouTubeQuery(text, history);
+      const isDirectHome = !query;
+      const res = await computerTools.openSearch(query || 'trending music', 'youtube');
+      const ytUrl = isDirectHome
+        ? 'https://www.youtube.com'
+        : (res?.url || `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`);
+
       return {
-        reply: `Opened YouTube in default browser and executed search for: **"${query}"**.\n\nURL: ${res.url}`,
+        reply: query
+          ? `Opened YouTube in default browser and executed search for: **"${query}"**.\n\n[▶ Play on YouTube](${ytUrl})\n\nURL: ${ytUrl}`
+          : `Opened YouTube in default browser.\n\n[▶ Open YouTube](${ytUrl})\n\nURL: ${ytUrl}`,
         needsClarification: false,
-        audioText: `Opening YouTube and searching for ${query}.`
+        audioText: query ? `Opening YouTube and searching for ${query}.` : `Opening YouTube.`,
+        openUrl: ytUrl,
+        searchQuery: query || undefined,
+        interpretedAction: query ? `YouTube playback: ${query}` : 'Launch YouTube'
       };
     }
 
@@ -766,11 +867,26 @@ export class JarvisOrchestrator {
           fullContent: c.content
         }));
 
+        let openUrl: string | undefined;
+        let searchQuery: string | undefined;
+        const ytLinkMatch = aiRes.reply.match(/https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=[\w-]+|results\?search_query=[^\s\)\"\'<>]+)|youtu\.be\/[\w-]+)/i);
+        if (ytLinkMatch) {
+          openUrl = ytLinkMatch[0];
+        } else if (/(?:play|chalao|lagao|watch|listen|suno)\b/i.test(text) && /(?:youtube|song|music|video|qawwali|naat)\b/i.test(text)) {
+          const q = extractYouTubeQuery(text, history);
+          if (q) {
+            searchQuery = q;
+            openUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+          }
+        }
+
         return {
           reply: aiRes.reply,
           needsClarification: false,
           audioText: aiRes.reply,
           interpretedAction: `AI Conversation via ${aiRes.provider} (${aiRes.model})`,
+          openUrl,
+          searchQuery,
           appliedCorrection: appliedCorrection ? {
             id: appliedCorrection.id,
             originalRequest: appliedCorrection.originalRequest,

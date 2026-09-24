@@ -48,7 +48,7 @@ export const VoiceReviewBar: React.FC<VoiceReviewBarProps> = ({
               <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
             </span>
             <span className="text-cyan-300 font-bold">
-              {isCorrection ? 'Voice Correction Detected' : 'Voice Transcript Ready'}
+              {isCorrection ? 'Voice Correction' : 'Voice Message'}
             </span>
             {confidence && (
               <span className="text-slate-400 text-[10px] bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700">
@@ -57,7 +57,7 @@ export const VoiceReviewBar: React.FC<VoiceReviewBarProps> = ({
             )}
           </div>
           <span className="text-slate-500 text-[11px]">
-            Review &amp; Edit Before Executing (Press Enter to send)
+            Review &amp; Edit (Press Enter to Send)
           </span>
         </div>
 
@@ -77,7 +77,7 @@ export const VoiceReviewBar: React.FC<VoiceReviewBarProps> = ({
         {/* Action Buttons */}
         <div className="flex items-center justify-between pt-1">
           <div className="text-[11px] font-mono text-slate-400">
-            Esc to cancel • Enter to execute
+            Esc to cancel • Enter to Send
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -100,7 +100,7 @@ export const VoiceReviewBar: React.FC<VoiceReviewBarProps> = ({
               className="px-4 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs font-mono transition-all flex items-center gap-1.5 shadow-md shadow-cyan-500/20"
             >
               <Send className="w-3.5 h-3.5" />
-              Execute Now
+              Send
             </button>
           </div>
         </div>
