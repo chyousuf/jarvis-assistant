@@ -10,7 +10,8 @@ import {
   Bell,
   Shield,
   Activity,
-  Laptop
+  Laptop,
+  BookOpen
 } from 'lucide-react';
 import { ActiveTab } from './Header.js';
 
@@ -40,6 +41,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }> = [
     { id: 'chat', label: 'Chat', icon: MessageSquare },
     { id: 'tasks', label: 'Tasks', icon: CheckSquare, badge: activeTaskCount > 0 ? activeTaskCount : undefined },
+    { id: 'learning', label: 'Learning & Memory', icon: BookOpen },
     { id: 'computer', label: 'Computer Control', icon: Monitor, indicator: 'companion' },
     { id: 'emails', label: 'Email', icon: Mail },
     { id: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },

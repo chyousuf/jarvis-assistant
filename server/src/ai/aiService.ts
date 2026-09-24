@@ -8,6 +8,7 @@ export interface AIServiceConfig {
   apiKey: string;
   model?: string;
   baseUrl?: string;
+  systemInstruction?: string;
 }
 
 export interface AIResponse {
@@ -17,18 +18,18 @@ export interface AIResponse {
   tokensUsed?: number;
 }
 
-const SYSTEM_INSTRUCTION = `You are J.A.R.V.I.S., a highly capable, intelligent, and courteous personal AI assistant inspired by Tony Stark's JARVIS.
+export const BASE_SYSTEM_INSTRUCTION = `You are J.A.R.V.I.S., a highly capable, intelligent, and courteous personal AI assistant inspired by Tony Stark's JARVIS.
 Key guidelines:
-1. Always follow the user's explicit instructions carefully.
-2. If the user asks for a specific format (e.g. "Reply with only: Hello" or "Write a two-sentence meeting request"), adhere to it strictly.
-3. Be concise, precise, and helpful. Do not add unnecessary fluff unless requested.
+1. Follow the user's explicit instructions carefully. Adhere strictly to any requested length, structure, or format (e.g. "Reply with only: Hello" or "Write a two-sentence meeting request").
+2. Context Awareness & Follow-ups: When the user asks a follow-up referring to "previous answer", "that", "it", "the second one", or previous drafts, ALWAYS examine the preceding messages in the conversation history and build directly upon them.
+3. Arithmetic Precision: When asked to calculate or operate on previous results (e.g., "What is 23 multiplied by 7?", "Add 9 to your previous answer"), compute and return the exact mathematical value.
 4. Support English, Urdu, and mixed Roman-Urdu seamlessly.
-5. If doing math, calculate accurately (e.g., 17 * 6 = 102).`;
+5. Be concise, respectful, and helpful.`;
 
 /**
  * Call Google Gemini API via native fetch
  */
-async function callGemini(apiKey: string, messages: ChatMessage[], modelName = 'gemini-3.5-flash-lite'): Promise<AIResponse> {
+async function callGemini(apiKey: string, messages: ChatMessage[], modelName = 'gemini-3.5-flash-lite', customSystem?: string): Promise<AIResponse> {
   const modelsToTry = [modelName, 'gemini-3.5-flash-lite', 'gemini-3.5-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
   const uniqueModels = Array.from(new Set(modelsToTry));
 
@@ -42,10 +43,10 @@ async function callGemini(apiKey: string, messages: ChatMessage[], modelName = '
   const payload: any = {
     contents,
     systemInstruction: {
-      parts: [{ text: SYSTEM_INSTRUCTION }]
+      parts: [{ text: customSystem || BASE_SYSTEM_INSTRUCTION }]
     },
     generationConfig: {
-      temperature: 0.3,
+      temperature: 0.2,
       maxOutputTokens: 1024
     }
   };
@@ -100,10 +101,11 @@ async function callOpenAICompatible(
   messages: ChatMessage[],
   endpoint = 'https://api.openai.com/v1/chat/completions',
   modelName = 'gpt-4o-mini',
-  providerName = 'openai'
+  providerName = 'openai',
+  customSystem?: string
 ): Promise<AIResponse> {
   const formattedMessages = [
-    { role: 'system', content: SYSTEM_INSTRUCTION },
+    { role: 'system', content: customSystem || BASE_SYSTEM_INSTRUCTION },
     ...messages.map(m => ({
       role: m.role === 'model' ? 'assistant' : m.role,
       content: m.content
@@ -119,7 +121,7 @@ async function callOpenAICompatible(
     body: JSON.stringify({
       model: modelName,
       messages: formattedMessages,
-      temperature: 0.3
+      temperature: 0.2
     }),
     signal: AbortSignal.timeout(15000)
   });
@@ -146,7 +148,7 @@ async function callOpenAICompatible(
 /**
  * Call Anthropic API via native fetch
  */
-async function callAnthropic(apiKey: string, messages: ChatMessage[], modelName = 'claude-3-5-sonnet-20241022'): Promise<AIResponse> {
+async function callAnthropic(apiKey: string, messages: ChatMessage[], modelName = 'claude-3-5-sonnet-20241022', customSystem?: string): Promise<AIResponse> {
   const formattedMessages = messages
     .filter(m => m.role !== 'system')
     .map(m => ({
@@ -163,10 +165,10 @@ async function callAnthropic(apiKey: string, messages: ChatMessage[], modelName 
     },
     body: JSON.stringify({
       model: modelName,
-      system: SYSTEM_INSTRUCTION,
+      system: customSystem || BASE_SYSTEM_INSTRUCTION,
       messages: formattedMessages,
       max_tokens: 1024,
-      temperature: 0.3
+      temperature: 0.2
     }),
     signal: AbortSignal.timeout(15000)
   });
@@ -239,21 +241,22 @@ export async function executeAIConversation(
   messages: ChatMessage[],
   config: AIServiceConfig
 ): Promise<AIResponse> {
-  const { provider, apiKey, model } = config;
+  const { provider, apiKey, model, systemInstruction } = config;
 
   switch (provider) {
     case 'gemini':
-      return callGemini(apiKey, messages, model || 'gemini-3.5-flash-lite');
+      return callGemini(apiKey, messages, model || 'gemini-3.5-flash-lite', systemInstruction);
     case 'groq':
       return callOpenAICompatible(
         apiKey,
         messages,
         'https://api.groq.com/openai/v1/chat/completions',
         model || 'llama-3.3-70b-versatile',
-        'groq'
+        'groq',
+        systemInstruction
       );
     case 'anthropic':
-      return callAnthropic(apiKey, messages, model || 'claude-3-5-sonnet-20241022');
+      return callAnthropic(apiKey, messages, model || 'claude-3-5-sonnet-20241022', systemInstruction);
     case 'openai':
     default:
       return callOpenAICompatible(
@@ -261,7 +264,8 @@ export async function executeAIConversation(
         messages,
         'https://api.openai.com/v1/chat/completions',
         model || 'gpt-4o-mini',
-        'openai'
+        'openai',
+        systemInstruction
       );
   }
 }

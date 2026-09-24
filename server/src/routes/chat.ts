@@ -51,15 +51,24 @@ router.post('/', async (req: Request, res: Response) => {
       VALUES (?, ?, 'user', ?, ?)
     `).run(userMsgId, conversationId, message, now);
 
-    // Fetch recent history
+    // Fetch recent history (exclude the newly inserted message so it doesn't duplicate)
     const historyRows = db.prepare(`
       SELECT sender as role, content FROM messages
-      WHERE conversation_id = ?
+      WHERE conversation_id = ? AND id != ?
       ORDER BY created_at ASC LIMIT 20
-    `).all(conversationId) as any[];
+    `).all(conversationId, userMsgId) as any[];
+
+    const clientHistory = Array.isArray(req.body?.history) ? req.body.history : [];
+    const effectiveHistory = historyRows && historyRows.length > 0 ? historyRows : clientHistory;
 
     // Process through JARVIS Orchestrator
-    const result = await orchestrator.processUserMessage(message, historyRows, clientKey, clientProvider);
+    const result = await orchestrator.processUserMessage(
+      message,
+      effectiveHistory,
+      clientKey,
+      clientProvider,
+      req.body?.learningContext
+    );
 
     // Save assistant reply
     const jarvisMsgId = `msg-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;

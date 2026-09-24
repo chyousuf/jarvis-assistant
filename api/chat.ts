@@ -1,4 +1,6 @@
-import { resolveAIConfig, executeAIConversation, ChatMessage } from './aiService.js';
+import { resolveAIConfig, executeAIConversation, ChatMessage, BASE_SYSTEM_INSTRUCTION } from './aiService.js';
+import { resolveArithmeticWithContext } from './calculator.js';
+import { buildLearningSystemInstruction } from './learningService.js';
 
 // In-memory sliding-window IP rate limiter
 const ipRequestWindow = new Map<string, number[]>();
@@ -173,6 +175,20 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
+    // 1.25 Exact Arithmetic & Contextual Calculator Tool
+    const calcResult = resolveArithmeticWithContext(trimmed, history);
+    if (calcResult && calcResult.calculated) {
+      res.status(200).json({
+        success: true,
+        messageId: jarvisMsgId,
+        reply: `${calcResult.result}\n\n*Calculation: ${calcResult.explanation}*`,
+        audioText: `${calcResult.result}. ${calcResult.explanation}.`,
+        needsClarification: false,
+        conversationId
+      });
+      return;
+    }
+
     // 1.3 Desktop Acceptance Workflow:
     // "Open TextEdit, write ‘This is a JARVIS test’, and save it as jarvis-test.txt in my approved workspace"
     const textEditWorkflowMatch = trimmed.match(
@@ -294,9 +310,21 @@ export default async function handler(req: any, res: any) {
 
     if (aiConfig) {
       try {
-        // Build multi-turn context
+        // Inject Learning Context (Preferences, Corrections, Document Knowledge)
+        const learningCtx = body?.learningContext;
+        if (learningCtx) {
+          aiConfig.systemInstruction = buildLearningSystemInstruction(
+            BASE_SYSTEM_INSTRUCTION,
+            learningCtx.preferences,
+            learningCtx.corrections,
+            learningCtx.documents,
+            trimmed
+          );
+        }
+
+        // Build multi-turn context (last 12 messages)
         const contextMessages: ChatMessage[] = [];
-        for (const h of history.slice(-6)) {
+        for (const h of history.slice(-12)) {
           if (h.content) {
             contextMessages.push({
               role: h.role === 'user' ? 'user' : 'assistant',

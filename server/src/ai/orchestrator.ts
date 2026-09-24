@@ -8,7 +8,10 @@ import { prepareWhatsAppMessage } from '../tools/whatsappService.js';
 import { listApprovals, resolveApproval } from '../tasks/approvalManager.js';
 import { execSync } from 'child_process';
 import { computerTools } from '../tools/computerTools.js';
-import { resolveAIConfig, executeAIConversation, ChatMessage } from './aiService.js';
+import { resolveAIConfig, executeAIConversation, ChatMessage, BASE_SYSTEM_INSTRUCTION } from './aiService.js';
+import { resolveArithmeticWithContext } from '../tools/calculator.js';
+import { buildLearningSystemInstruction, LearningContextPayload } from './learningService.js';
+import { getLearningStore } from '../routes/learning.js';
 
 export interface OrchestrationResult {
   reply: string;
@@ -32,7 +35,8 @@ export class JarvisOrchestrator {
     userText: string,
     conversationHistory: Array<{ role: string; content: string }> = [],
     customKey?: string,
-    customProvider?: string
+    customProvider?: string,
+    learningContext?: LearningContextPayload
   ): Promise<OrchestrationResult> {
     const trimmed = userText.trim();
     if (!trimmed) {
@@ -42,6 +46,23 @@ export class JarvisOrchestrator {
         audioText: "I am online, sir. What task may I carry out?",
         rawTranscript: userText,
         interpretedAction: 'Idle check'
+      };
+    }
+
+    // 0. Emergency Stop (Immediate priority across speech, computer tasks, and pending approvals)
+    const lower = trimmed.toLowerCase();
+    if (lower === 'stop' || lower === 'ruko' || lower === 'ruk jao' || lower === 'halt' || lower === 'emergency stop') {
+      computerTools.stop();
+      const pending = listApprovals('pending');
+      for (const a of pending) {
+        resolveApproval(a.id, 'rejected');
+      }
+      return {
+        reply: "Immediate stop engaged, sir. All active speech synthesis, pending approvals, and ongoing computer actions have been halted.",
+        needsClarification: false,
+        audioText: "Stopped.",
+        rawTranscript: trimmed,
+        interpretedAction: 'Emergency Stop'
       };
     }
 
@@ -62,7 +83,7 @@ export class JarvisOrchestrator {
     }
 
     // 3. Default: JARVIS Multi-Modal Reasoning Engine
-    const result = await this.processWithBuiltinEngine(trimmed, conversationHistory, memoryContext, customKey, customProvider);
+    const result = await this.processWithBuiltinEngine(trimmed, conversationHistory, memoryContext, customKey, customProvider, learningContext);
     result.rawTranscript = trimmed;
     return result;
   }
@@ -147,7 +168,8 @@ export class JarvisOrchestrator {
     history: Array<{ role: string; content: string }>,
     memoryContext: string,
     customKey?: string,
-    customProvider?: string
+    customProvider?: string,
+    learningContext?: LearningContextPayload
   ): Promise<OrchestrationResult> {
     const lower = text.toLowerCase();
 
@@ -174,6 +196,17 @@ export class JarvisOrchestrator {
         needsClarification: true,
         clarificationQuestion: "Which specific recipient, document, or task should I target?",
         audioText: "Could you please clarify the target of this action?"
+      };
+    }
+
+    // 1.5 Safe Arithmetic & Contextual Calculator Tool
+    const calcResult = resolveArithmeticWithContext(text, history);
+    if (calcResult && calcResult.calculated) {
+      return {
+        reply: `${calcResult.result}\n\n*Calculation: ${calcResult.explanation}*`,
+        needsClarification: false,
+        audioText: `${calcResult.result}. ${calcResult.explanation}.`,
+        interpretedAction: `Exact arithmetic: ${calcResult.explanation}`
       };
     }
 
@@ -684,8 +717,21 @@ export class JarvisOrchestrator {
     const aiConfig = resolveAIConfig(customKey, customProvider);
     if (aiConfig) {
       try {
+        const store = getLearningStore();
+        const activePrefs = learningContext?.preferences || store.preferences;
+        const activeCorrs = learningContext?.corrections || store.corrections;
+        const activeDocs = learningContext?.documents || store.documents;
+
+        aiConfig.systemInstruction = buildLearningSystemInstruction(
+          BASE_SYSTEM_INSTRUCTION,
+          activePrefs,
+          activeCorrs,
+          activeDocs,
+          text
+        );
+
         const contextMessages: ChatMessage[] = [];
-        for (const h of history.slice(-6)) {
+        for (const h of history.slice(-12)) {
           if (h.content) {
             contextMessages.push({
               role: h.role === 'user' ? 'user' : 'assistant',
@@ -736,7 +782,7 @@ export class JarvisOrchestrator {
 
     // Honest reporting when AI service is unavailable
     return {
-      reply: `⚠️ **AI Service Unavailable**:\n\nNo LLM API key (Google Gemini, OpenAI, Anthropic, or Groq) is currently configured.\n\nTo enable intelligent conversation, math calculation (e.g. "What is 17 multiplied by 6?"), and text composition, please configure an API key in the **Connections** tab or set \`GEMINI_API_KEY\` in your environment.`,
+      reply: `⚠️ **AI Service Unavailable**:\n\nNo LLM API key (Google Gemini, OpenAI, Anthropic, or Groq) is currently configured.\n\nTo enable intelligent conversation, math calculation, and text composition, please configure an API key in the **Connections** tab or set \`GEMINI_API_KEY\` in your environment.`,
       needsClarification: false,
       audioText: "AI service is unavailable. Please configure an API key in Connections."
     };

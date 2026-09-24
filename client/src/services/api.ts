@@ -206,6 +206,117 @@ export function setAccessPasscode(passcode: string) {
   }
 }
 
+export interface UserPreference {
+  id: string;
+  category: 'language' | 'style' | 'timezone' | 'output_format' | 'general';
+  key: string;
+  value: string;
+  enabled: boolean;
+  origin: 'User Added' | 'Default' | 'Inferred';
+  updated_at: string;
+}
+
+export interface UserCorrection {
+  id: string;
+  originalRequest: string;
+  incorrectInterpretation: string;
+  approvedCorrection: string;
+  created_at: string;
+}
+
+export interface DocumentKnowledge {
+  id: string;
+  title: string;
+  content: string;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export const DEFAULT_CLIENT_PREFERENCES: UserPreference[] = [
+  {
+    id: 'pref-lang-1',
+    category: 'language',
+    key: 'Language Support',
+    value: 'English, Urdu, and Pakistani Roman-Urdu seamlessly',
+    enabled: true,
+    origin: 'Default',
+    updated_at: new Date().toISOString()
+  },
+  {
+    id: 'pref-tz-1',
+    category: 'timezone',
+    key: 'Timezone',
+    value: 'Asia/Karachi (PKT, UTC+5)',
+    enabled: true,
+    origin: 'Default',
+    updated_at: new Date().toISOString()
+  },
+  {
+    id: 'pref-style-1',
+    category: 'style',
+    key: 'Tone & Persona',
+    value: 'Courteous, precise, and respectful, addressing the user as Sir',
+    enabled: true,
+    origin: 'Default',
+    updated_at: new Date().toISOString()
+  },
+  {
+    id: 'pref-output-1',
+    category: 'output_format',
+    key: 'Calculations & Format',
+    value: 'Exact numeric values with mathematical precision; concise spoken summaries',
+    enabled: true,
+    origin: 'Default',
+    updated_at: new Date().toISOString()
+  }
+];
+
+export function getStoredPreferences(): UserPreference[] {
+  try {
+    const raw = localStorage.getItem('jarvis_learning_preferences');
+    if (raw) return JSON.parse(raw);
+  } catch { /* noop */ }
+  return DEFAULT_CLIENT_PREFERENCES;
+}
+
+export function saveStoredPreferences(prefs: UserPreference[]) {
+  localStorage.setItem('jarvis_learning_preferences', JSON.stringify(prefs));
+}
+
+export function getStoredCorrections(): UserCorrection[] {
+  try {
+    const raw = localStorage.getItem('jarvis_learning_corrections');
+    if (raw) return JSON.parse(raw);
+  } catch { /* noop */ }
+  return [];
+}
+
+export function saveStoredCorrections(corrs: UserCorrection[]) {
+  localStorage.setItem('jarvis_learning_corrections', JSON.stringify(corrs));
+}
+
+export function getStoredDocuments(): DocumentKnowledge[] {
+  try {
+    const raw = localStorage.getItem('jarvis_learning_documents');
+    if (raw) return JSON.parse(raw);
+  } catch { /* noop */ }
+  return [
+    {
+      id: 'doc-welcome',
+      title: 'JARVIS System Architecture & Directives',
+      content: 'J.A.R.V.I.S. (Just A Rather Very Intelligent System) is engineered for autonomous desktop automation, context-aware reasoning, and personal productivity. Built with privacy-first principles and bounded tool execution.',
+      tags: ['system', 'architecture', 'directives'],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }
+  ];
+}
+
+export function saveStoredDocuments(docs: DocumentKnowledge[]) {
+  localStorage.setItem('jarvis_learning_documents', JSON.stringify(docs));
+}
+
 /**
  * Resilient JSON fetch helper that inspects status, validates Content-Type,
  * and guards against HTML/empty responses that cause "Unexpected end of JSON input".
@@ -296,11 +407,156 @@ export const api = {
   },
 
   // Chat
-  async sendMessage(message: string, conversationId = 'default') {
+  async sendMessage(
+    message: string,
+    conversationId = 'default',
+    history: Array<{ role: string; content: string }> = [],
+    learningContext?: {
+      preferences?: UserPreference[];
+      corrections?: UserCorrection[];
+      documents?: DocumentKnowledge[];
+    }
+  ) {
+    const effectiveLearning = learningContext || {
+      preferences: getStoredPreferences(),
+      corrections: getStoredCorrections(),
+      documents: getStoredDocuments()
+    };
+
     return fetchJson(`${API_BASE}/chat`, {
       method: 'POST',
-      body: JSON.stringify({ message, conversationId })
+      body: JSON.stringify({
+        message,
+        conversationId,
+        history,
+        learningContext: effectiveLearning
+      })
     });
+  },
+
+  // Learning & Memory Center
+  async getPreferences(): Promise<UserPreference[]> {
+    try {
+      const data = await fetchJson<{ success: boolean; preferences: UserPreference[] }>(`${API_BASE}/learning?tab=preferences`);
+      if (data.preferences) {
+        saveStoredPreferences(data.preferences);
+        return data.preferences;
+      }
+    } catch { /* fallback to local */ }
+    return getStoredPreferences();
+  },
+
+  async savePreference(pref: Omit<UserPreference, 'id' | 'updated_at'>): Promise<UserPreference> {
+    const newItem: UserPreference = {
+      ...pref,
+      id: `pref-${Date.now().toString(36)}`,
+      updated_at: new Date().toISOString()
+    };
+    try {
+      await fetchJson(`${API_BASE}/learning`, {
+        method: 'POST',
+        body: JSON.stringify({ type: 'preference', data: newItem })
+      });
+    } catch { /* local sync */ }
+    const current = getStoredPreferences();
+    const updated = [...current, newItem];
+    saveStoredPreferences(updated);
+    return newItem;
+  },
+
+  async updatePreference(id: string, updates: Partial<UserPreference>): Promise<void> {
+    try {
+      await fetchJson(`${API_BASE}/learning`, {
+        method: 'PUT',
+        body: JSON.stringify({ type: 'preference', id, data: updates })
+      });
+    } catch { /* local sync */ }
+    const current = getStoredPreferences();
+    const updated = current.map(p => p.id === id ? { ...p, ...updates, updated_at: new Date().toISOString() } : p);
+    saveStoredPreferences(updated);
+  },
+
+  async deletePreference(id: string): Promise<void> {
+    try {
+      await fetchJson(`${API_BASE}/learning?tab=preferences&id=${id}`, { method: 'DELETE' });
+    } catch { /* local sync */ }
+    const current = getStoredPreferences();
+    saveStoredPreferences(current.filter(p => p.id !== id));
+  },
+
+  async getCorrections(): Promise<UserCorrection[]> {
+    try {
+      const data = await fetchJson<{ success: boolean; corrections: UserCorrection[] }>(`${API_BASE}/learning?tab=corrections`);
+      if (data.corrections) {
+        saveStoredCorrections(data.corrections);
+        return data.corrections;
+      }
+    } catch { /* fallback to local */ }
+    return getStoredCorrections();
+  },
+
+  async addCorrection(corr: Omit<UserCorrection, 'id' | 'created_at'>): Promise<UserCorrection> {
+    const newItem: UserCorrection = {
+      ...corr,
+      id: `corr-${Date.now().toString(36)}`,
+      created_at: new Date().toISOString()
+    };
+    try {
+      await fetchJson(`${API_BASE}/learning`, {
+        method: 'POST',
+        body: JSON.stringify({ type: 'correction', data: newItem })
+      });
+    } catch { /* local sync */ }
+    const current = getStoredCorrections();
+    const updated = [...current, newItem];
+    saveStoredCorrections(updated);
+    return newItem;
+  },
+
+  async deleteCorrection(id: string): Promise<void> {
+    try {
+      await fetchJson(`${API_BASE}/learning?tab=corrections&id=${id}`, { method: 'DELETE' });
+    } catch { /* local sync */ }
+    const current = getStoredCorrections();
+    saveStoredCorrections(current.filter(c => c.id !== id));
+  },
+
+  async getDocuments(): Promise<DocumentKnowledge[]> {
+    try {
+      const data = await fetchJson<{ success: boolean; documents: DocumentKnowledge[] }>(`${API_BASE}/learning?tab=documents`);
+      if (data.documents) {
+        saveStoredDocuments(data.documents);
+        return data.documents;
+      }
+    } catch { /* fallback to local */ }
+    return getStoredDocuments();
+  },
+
+  async saveDocument(doc: Omit<DocumentKnowledge, 'id' | 'created_at' | 'updated_at'>): Promise<DocumentKnowledge> {
+    const newItem: DocumentKnowledge = {
+      ...doc,
+      id: `doc-${Date.now().toString(36)}`,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    try {
+      await fetchJson(`${API_BASE}/learning`, {
+        method: 'POST',
+        body: JSON.stringify({ type: 'document', data: newItem })
+      });
+    } catch { /* local sync */ }
+    const current = getStoredDocuments();
+    const updated = [...current, newItem];
+    saveStoredDocuments(updated);
+    return newItem;
+  },
+
+  async deleteDocument(id: string): Promise<void> {
+    try {
+      await fetchJson(`${API_BASE}/learning?tab=documents&id=${id}`, { method: 'DELETE' });
+    } catch { /* local sync */ }
+    const current = getStoredDocuments();
+    saveStoredDocuments(current.filter(d => d.id !== id));
   },
 
   async getHistory(conversationId = 'default'): Promise<Message[]> {

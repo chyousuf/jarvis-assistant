@@ -3,6 +3,8 @@ import { normalizeTranscript, parseCorrection, DEFAULT_VOCABULARY, VocabularyCon
 interface IWindow extends Window {
   webkitSpeechRecognition?: any;
   SpeechRecognition?: any;
+  SpeechGrammarList?: any;
+  webkitSpeechGrammarList?: any;
 }
 
 export type VoiceState = 'idle' | 'listening' | 'processing' | 'ready' | 'speaking';
@@ -78,6 +80,25 @@ export class VoiceService {
     this.recognition.continuous = true;
     this.recognition.interimResults = true;
     this.recognition.maxAlternatives = 1;
+
+    // Attach Pakistani vocabulary and common desktop app grammar hints if supported
+    try {
+      const GrammarList = win.SpeechGrammarList || win.webkitSpeechGrammarList;
+      if (GrammarList) {
+        const speechGrammars = new GrammarList();
+        const terms = [
+          'WhatsApp', 'Chrome', 'TextEdit', 'Word', 'YouTube', 'Notes',
+          'Ali', 'Ahmed', 'Yousaf', 'Usman', 'Bilal', 'Fatima', 'Ayesha', 'Hassan', 'Raza', 'Khan',
+          'kholo', 'bhejo', 'likho', 'parho', 'ruko', 'theek hai', 'salam'
+        ];
+        const grammar = `#JSGF V1.0; grammar jarvisVocab; public <term> = ${terms.join(' | ')} ;`;
+        speechGrammars.addFromString(grammar, 1);
+        this.recognition.grammars = speechGrammars;
+      }
+    } catch {
+      // SpeechGrammarList not supported on this browser engine; fall back to normalizer
+    }
+
     this.updateRecognitionLanguage();
 
     this.recognition.onresult = (event: any) => {

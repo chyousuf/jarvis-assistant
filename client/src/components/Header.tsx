@@ -22,7 +22,8 @@ export type ActiveTab =
   | 'workspace'
   | 'reminders'
   | 'connections'
-  | 'activity';
+  | 'activity'
+  | 'learning';
 
 interface HeaderProps {
   activeTab: ActiveTab;

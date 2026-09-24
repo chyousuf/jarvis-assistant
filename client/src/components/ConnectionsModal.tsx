@@ -34,7 +34,7 @@ import {
 } from '../services/api.js';
 
 export const ConnectionsModal: React.FC = () => {
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [lastCheckTimes, setLastCheckTimes] = useState<Record<string, string>>({});
 
   // 1. AI Service State
@@ -50,18 +50,19 @@ export const ConnectionsModal: React.FC = () => {
   const [passcodeSavedNotice, setPasscodeSavedNotice] = useState(false);
 
   // 3. Companion State
-  const [companionStatus, setCompanionStatus] = useState<'connected' | 'offline'>('offline');
+  const [companionStatus, setCompanionStatus] = useState<'checking' | 'connected' | 'offline'>('checking');
   const [companionDetails, setCompanionDetails] = useState<any>(null);
   const [copiedServiceCmd, setCopiedServiceCmd] = useState(false);
+  const [showCompanionGuide, setShowCompanionGuide] = useState(false);
 
   // 4. Email State
-  const [emailStatus, setEmailStatus] = useState<'connected' | 'needs_setup'>('needs_setup');
+  const [emailStatus, setEmailStatus] = useState<'checking' | 'connected' | 'needs_setup'>('checking');
 
   // 5. WhatsApp State
-  const [whatsappStatus, setWhatsappStatus] = useState<'connected' | 'needs_setup'>('needs_setup');
+  const [whatsappStatus, setWhatsappStatus] = useState<'checking' | 'connected' | 'needs_setup'>('checking');
 
   // 6. Calendar State
-  const [calendarStatus, setCalendarStatus] = useState<'connected'>('connected');
+  const [calendarStatus, setCalendarStatus] = useState<'checking' | 'connected'>('checking');
 
   // Dynamic origin calculation for truthful OAuth instructions
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://jarvis-assistant-pi-dun.vercel.app';
@@ -207,25 +208,32 @@ export const ConnectionsModal: React.FC = () => {
 
             <div className="flex items-center gap-2">
               <span
-                className={`text-[10px] font-mono px-2.5 py-0.5 rounded-full ${
-                  aiTestResult?.success
+                className={`text-[10px] font-mono px-2.5 py-0.5 rounded-full flex items-center gap-1.5 ${
+                  loading
+                    ? 'bg-slate-800 text-cyan-400 border border-cyan-500/30'
+                    : aiTestResult?.success
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                     : serverAIStatus?.configured
                     ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
                     : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                 }`}
               >
-                {aiTestResult?.success
-                  ? 'VERIFIED & OPERATIONAL'
-                  : serverAIStatus?.configured
-                  ? 'CONFIGURED IN SERVER ENV'
-                  : 'SETUP REQUIRED'}
+                {loading ? (
+                  <>
+                    <RefreshCw className="w-2.5 h-2.5 animate-spin text-cyan-400" />
+                    <span>CHECKING...</span>
+                  </>
+                ) : aiTestResult?.success ? (
+                  'VERIFIED & OPERATIONAL'
+                ) : serverAIStatus?.configured ? (
+                  'CONFIGURED IN SERVER ENV'
+                ) : (
+                  'SETUP REQUIRED'
+                )}
               </span>
-              {lastCheckTimes.ai && (
-                <span className="text-[10px] font-mono text-slate-500">
-                  Checked: {lastCheckTimes.ai}
-                </span>
-              )}
+              <span className="text-[10px] font-mono text-slate-500">
+                {loading ? 'Auditing...' : `Checked: ${lastCheckTimes.ai || 'Just now'}`}
+              </span>
             </div>
           </div>
 
@@ -419,13 +427,24 @@ export const ConnectionsModal: React.FC = () => {
               </h3>
             </div>
             <span
-              className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
-                companionStatus === 'connected'
+              className={`text-[10px] font-mono px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                companionStatus === 'checking'
+                  ? 'bg-slate-800 text-cyan-400 border border-cyan-500/30'
+                  : companionStatus === 'connected'
                   ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                   : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
               }`}
             >
-              {companionStatus === 'connected' ? 'ONLINE & PAIRED' : 'DISCONNECTED'}
+              {companionStatus === 'checking' ? (
+                <>
+                  <RefreshCw className="w-2.5 h-2.5 animate-spin text-cyan-400" />
+                  <span>CHECKING...</span>
+                </>
+              ) : companionStatus === 'connected' ? (
+                'ONLINE & PAIRED'
+              ) : (
+                'DISCONNECTED'
+              )}
             </span>
           </div>
 
@@ -434,10 +453,26 @@ export const ConnectionsModal: React.FC = () => {
           </p>
 
           <div className="text-[11px] font-mono text-slate-400 p-2.5 bg-slate-950 rounded border border-slate-800 space-y-1">
-            <div>Daemon: {companionStatus === 'connected' ? 'Paired via ~/.jarvis_token' : 'Offline (Desktop actions locked)'}</div>
+            <div>Daemon: {companionStatus === 'checking' ? 'Checking connection...' : companionStatus === 'connected' ? 'Paired via ~/.jarvis_token' : 'Offline (Desktop actions locked)'}</div>
             <div>Device: {companionDetails?.os?.platform ? `${companionDetails.os.platform} (${companionDetails.os.osRelease})` : 'None'}</div>
-            <div>Frontmost App: {companionDetails?.activeWindow?.frontmostApp || 'Offline'}</div>
+            <div>Frontmost App: {companionDetails?.activeWindow?.frontmostApp || (companionStatus === 'checking' ? 'Detecting...' : 'Offline')}</div>
           </div>
+
+          {/* Guided setup when disconnected */}
+          {companionStatus === 'offline' && (
+            <div className="p-2.5 bg-amber-950/30 border border-amber-500/30 rounded text-[11px] text-amber-200/90 space-y-1">
+              <div className="font-semibold flex items-center gap-1.5 text-amber-300">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+                <span>Companion Not Running</span>
+              </div>
+              <p className="text-[10px] text-slate-300">
+                Run in your local terminal to enable TextEdit, app switching, and typing:
+              </p>
+              <code className="block bg-slate-900 p-1.5 rounded text-cyan-300 text-[10px] font-mono">
+                npm run companion
+              </code>
+            </div>
+          )}
 
           {/* Start at login LaunchAgent command */}
           <div className="p-2.5 bg-slate-950 rounded border border-slate-800 space-y-1.5 text-[11px]">
@@ -467,13 +502,24 @@ export const ConnectionsModal: React.FC = () => {
               </h3>
             </div>
             <span
-              className={`text-[10px] font-mono px-2 py-0.5 rounded-full ${
-                emailStatus === 'connected'
+              className={`text-[10px] font-mono px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                emailStatus === 'checking'
+                  ? 'bg-slate-800 text-cyan-400 border border-cyan-500/30'
+                  : emailStatus === 'connected'
                   ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                   : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
               }`}
             >
-              {emailStatus === 'connected' ? 'CONFIGURED' : 'NEEDS CREDENTIALS'}
+              {emailStatus === 'checking' ? (
+                <>
+                  <RefreshCw className="w-2.5 h-2.5 animate-spin text-cyan-400" />
+                  <span>CHECKING...</span>
+                </>
+              ) : emailStatus === 'connected' ? (
+                'CONFIGURED'
+              ) : (
+                'NEEDS CREDENTIALS'
+              )}
             </span>
           </div>
 
@@ -489,7 +535,9 @@ export const ConnectionsModal: React.FC = () => {
           </div>
 
           <div className="flex items-center justify-between pt-1">
-            <span className="text-[10px] text-slate-500 font-mono">Checked: {lastCheckTimes.email}</span>
+            <span className="text-[10px] text-slate-500 font-mono">
+              {emailStatus === 'checking' ? 'Auditing...' : `Checked: ${lastCheckTimes.email || 'Just now'}`}
+            </span>
             <a
               href="/api/oauth/google/authorize"
               className="text-xs font-bold text-cyan-400 hover:underline inline-flex items-center gap-1"
@@ -509,8 +557,21 @@ export const ConnectionsModal: React.FC = () => {
                 5. WhatsApp Business
               </h3>
             </div>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-              HANDOFF ACTIVE
+            <span
+              className={`text-[10px] font-mono px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                whatsappStatus === 'checking'
+                  ? 'bg-slate-800 text-cyan-400 border border-cyan-500/30'
+                  : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+              }`}
+            >
+              {whatsappStatus === 'checking' ? (
+                <>
+                  <RefreshCw className="w-2.5 h-2.5 animate-spin text-cyan-400" />
+                  <span>CHECKING...</span>
+                </>
+              ) : (
+                'HANDOFF ACTIVE'
+              )}
             </span>
           </div>
 

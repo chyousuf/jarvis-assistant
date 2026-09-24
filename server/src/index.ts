@@ -17,6 +17,7 @@ import computerRouter from './routes/computer.js';
 import companionRouter, { pairingToken, TOKEN_FILE } from './routes/companion.js';
 import voiceRouter from './routes/voice.js';
 import aiRouter from './routes/ai.js';
+import { learningRouter } from './routes/learning.js';
 import { subscribeToTaskEvents } from './tasks/taskRunner.js';
 import { pollDueReminders } from './tools/reminders.js';
 
@@ -85,6 +86,7 @@ app.use('/api/computer', computerRouter);
 app.use('/api/companion', companionRouter);
 app.use('/api/voice', voiceRouter);
 app.use('/api/ai', aiRouter);
+app.use('/api/learning', learningRouter);
 
 // Server-Sent Events (SSE) for Real-Time Telemetry & Progress
 const sseClients = new Set<Response>();

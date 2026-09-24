@@ -13,6 +13,7 @@ import { ActivityLogModal } from './components/ActivityLogModal.js';
 import { ComputerControlModal } from './components/ComputerControlModal.js';
 import { AudioDiagnosticsModal } from './components/AudioDiagnosticsModal.js';
 import { VoiceReviewBar } from './components/VoiceReviewBar.js';
+import { LearningCenterModal } from './components/LearningCenterModal.js';
 import { api, Message, Task, Approval } from './services/api.js';
 import { voiceService, VoiceState, LanguageMode, TranscriptResult } from './services/voice.js';
 import { Bell, X } from 'lucide-react';
@@ -27,6 +28,13 @@ export const App: React.FC = () => {
   const [serverOnline, setServerOnline] = useState(true);
   const [companionConnected, setCompanionConnected] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // Conversation Session State
+  const [currentConversationId, setCurrentConversationId] = useState<string>('default');
+  const [prefilledCorrection, setPrefilledCorrection] = useState<{
+    originalRequest: string;
+    incorrectInterpretation: string;
+  } | null>(null);
 
   // Voice state
   const [voiceState, setVoiceState] = useState<VoiceState>('idle');
@@ -145,13 +153,13 @@ export const App: React.FC = () => {
     };
   }, [wakeWordEnabled, isMuted, activeTask?.id]);
 
-  // Send message
+  // Send message with multi-turn history & session isolation
   const handleSendMessage = async (text: string) => {
     if (!text.trim()) return;
 
     const userMessage: Message = {
       id: `usr-${Date.now().toString(36)}`,
-      conversation_id: 'default',
+      conversation_id: currentConversationId,
       sender: 'user',
       content: text,
       created_at: new Date().toISOString()
@@ -161,11 +169,19 @@ export const App: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const response = await api.sendMessage(text);
+      // Map prior messages into multi-turn history for LLM & arithmetic resolver
+      const history = messages
+        .filter((m) => m.sender === 'user' || m.sender === 'jarvis')
+        .map((m) => ({
+          role: m.sender === 'user' ? 'user' : 'assistant',
+          content: m.content
+        }));
+
+      const response = await api.sendMessage(text, currentConversationId, history);
 
       const assistantMessage: Message = {
         id: response.messageId || `jarvis-${Date.now().toString(36)}`,
-        conversation_id: 'default',
+        conversation_id: currentConversationId,
         sender: 'jarvis',
         content: response.reply,
         tool_calls: response.task ? [response.task] : undefined,
@@ -189,7 +205,7 @@ export const App: React.FC = () => {
       console.error('Send message error:', err);
       const errorMessage: Message = {
         id: `err-${Date.now().toString(36)}`,
-        conversation_id: 'default',
+        conversation_id: currentConversationId,
         sender: 'system',
         content: `Operational notice: ${err?.message || 'Failed to communicate with JARVIS engine.'}`,
         created_at: new Date().toISOString()
@@ -198,6 +214,27 @@ export const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Start fresh conversation session (session isolation)
+  const handleNewConversation = () => {
+    const newConvId = `conv-${Date.now().toString(36)}`;
+    setCurrentConversationId(newConvId);
+    setMessages([
+      {
+        id: `welcome-${Date.now().toString(36)}`,
+        conversation_id: newConvId,
+        sender: 'jarvis',
+        content: 'New conversation session started. Previous context has been cleared. How may I assist you today, sir?',
+        created_at: new Date().toISOString()
+      }
+    ]);
+  };
+
+  // Direct correction handoff from chat message to Learning Center
+  const handleCorrectMessage = (originalRequest: string, incorrectInterpretation: string) => {
+    setPrefilledCorrection({ originalRequest, incorrectInterpretation });
+    setActiveTab('learning');
   };
 
   // Voice Review handlers
@@ -346,6 +383,8 @@ export const App: React.FC = () => {
             <ChatInterface
               messages={messages}
               onSendMessage={handleSendMessage}
+              onNewConversation={handleNewConversation}
+              onCorrectMessage={handleCorrectMessage}
               isLoading={isLoading}
               activeTask={activeTask}
               pendingApprovals={pendingApprovals}
@@ -364,6 +403,13 @@ export const App: React.FC = () => {
               tasks={tasks}
               onCancelTask={handleCancelTask}
               onRefresh={() => api.getTasks().then(setTasks)}
+            />
+          )}
+
+          {activeTab === 'learning' && (
+            <LearningCenterModal
+              prefilledCorrection={prefilledCorrection}
+              onClose={() => setPrefilledCorrection(null)}
             />
           )}
 

@@ -1,5 +1,27 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Mic, AlertTriangle, CheckCircle2, XCircle, Clock, Shield, ArrowRight, Sparkles, RefreshCw, MessageSquare, Mail, Calendar, ExternalLink, Key } from 'lucide-react';
+import {
+  Send,
+  Mic,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Shield,
+  ArrowRight,
+  Sparkles,
+  RefreshCw,
+  MessageSquare,
+  Mail,
+  Calendar,
+  ExternalLink,
+  Key,
+  ThumbsUp,
+  ThumbsDown,
+  Copy,
+  Check,
+  Edit3,
+  PlusCircle
+} from 'lucide-react';
 import { Message, Task, Approval } from '../services/api.js';
 import { VoiceState } from '../services/voice.js';
 import { ActiveTab } from './Header.js';
@@ -8,6 +30,8 @@ import { MarkdownRenderer } from './MarkdownRenderer.js';
 interface ChatInterfaceProps {
   messages: Message[];
   onSendMessage: (text: string) => Promise<void>;
+  onNewConversation?: () => void;
+  onCorrectMessage?: (originalRequest: string, incorrectInterpretation: string) => void;
   isLoading: boolean;
   activeTask?: Task | null;
   pendingApprovals: Approval[];
@@ -23,6 +47,8 @@ interface ChatInterfaceProps {
 export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   messages,
   onSendMessage,
+  onNewConversation,
+  onCorrectMessage,
   isLoading,
   activeTask,
   pendingApprovals,
@@ -35,7 +61,19 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onNavigateTab
 }) => {
   const [inputText, setInputText] = useState('');
+  const [feedbackMap, setFeedbackMap] = useState<Record<string, 'up' | 'down'>>({});
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const handleFeedback = (msgId: string, type: 'up' | 'down') => {
+    setFeedbackMap(prev => ({ ...prev, [msgId]: prev[msgId] === type ? undefined as any : type }));
+  };
+
+  const handleCopy = (msgId: string, content: string) => {
+    navigator.clipboard.writeText(content);
+    setCopiedId(msgId);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   // Sync voice transcript to input if actively speaking
   useEffect(() => {
@@ -68,6 +106,24 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
   return (
     <div className="flex flex-col h-[calc(100vh-65px)] max-w-5xl mx-auto px-4 py-3">
+      {/* Session Toolbar */}
+      <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800/80 shrink-0">
+        <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
+          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+          <span>Active Context Session</span>
+        </div>
+        {onNewConversation && (
+          <button
+            onClick={onNewConversation}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-cyan-500/40 text-xs font-mono text-slate-300 transition-all shadow-sm"
+            title="Start new conversation with isolated context"
+          >
+            <PlusCircle className="w-3.5 h-3.5 text-cyan-400" />
+            <span>New Conversation</span>
+          </button>
+        )}
+      </div>
+
       {/* Messages Scroll Area */}
       <div className="flex-1 overflow-y-auto space-y-3.5 pr-2">
         {messages.length === 0 && (
@@ -104,7 +160,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         )}
 
         {/* Message Stream */}
-        {messages.map((msg) => (
+        {messages.map((msg, msgIdx) => (
           <div
             key={msg.id}
             className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
@@ -129,6 +185,53 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             >
               <div>
                 <MarkdownRenderer content={msg.content} />
+
+                {/* Assistant Message Actions & Feedback */}
+                {msg.sender === 'jarvis' && (
+                  <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => handleFeedback(msg.id, 'up')}
+                        title="Good response"
+                        className={`p-1 rounded hover:bg-slate-800 transition-colors ${feedbackMap[msg.id] === 'up' ? 'text-emerald-400' : 'text-slate-400'}`}
+                      >
+                        <ThumbsUp className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleFeedback(msg.id, 'down')}
+                        title="Needs improvement"
+                        className={`p-1 rounded hover:bg-slate-800 transition-colors ${feedbackMap[msg.id] === 'down' ? 'text-rose-400' : 'text-slate-400'}`}
+                      >
+                        <ThumbsDown className="w-3.5 h-3.5" />
+                      </button>
+                      {onCorrectMessage && (
+                        <button
+                          onClick={() => {
+                            const prevUserMsg = messages
+                              .slice(0, msgIdx)
+                              .reverse()
+                              .find(m => m.sender === 'user');
+                            onCorrectMessage(prevUserMsg?.content || '', msg.content);
+                          }}
+                          className="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-800/60 hover:bg-slate-800 text-[10px] font-mono text-cyan-400 border border-slate-700/60 transition-colors ml-1"
+                          title="Register this as a correction in the Learning Center"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          <span>Correct this</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={() => handleCopy(msg.id, msg.content)}
+                      className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors flex items-center gap-1 text-[10px]"
+                      title="Copy response"
+                    >
+                      {copiedId === msg.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                )}
+
                 {msg.sender === 'jarvis' && onNavigateTab && (msg.content.includes('Connections') || msg.content.includes('AI Service Unavailable')) && (
                   <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center gap-2">
                     <button
