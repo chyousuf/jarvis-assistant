@@ -94,6 +94,8 @@ export default async function handler(req: any, res: any) {
       }
     }
 
+    const message = body?.message || '';
+    const conversationId = body?.conversationId || 'default';
     const history: Array<{ role: string; content: string }> = Array.isArray(body?.history)
       ? body.history
       : Array.isArray(body?.conversationHistory)
