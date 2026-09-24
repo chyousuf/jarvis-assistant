@@ -25,6 +25,19 @@ export interface OrchestrationResult {
   voiceActionResolved?: boolean;
   rawTranscript?: string;
   interpretedAction?: string;
+  appliedCorrection?: {
+    id: string;
+    originalRequest: string;
+    approvedCorrection: string;
+    scope: 'once' | 'conversation' | 'reusable';
+  };
+  citations?: Array<{
+    id: string;
+    docTitle: string;
+    sectionIndex: number;
+    snippet: string;
+    fullContent: string;
+  }>;
 }
 
 export class JarvisOrchestrator {
@@ -722,13 +735,15 @@ export class JarvisOrchestrator {
         const activeCorrs = learningContext?.corrections || store.corrections;
         const activeDocs = learningContext?.documents || store.documents;
 
-        aiConfig.systemInstruction = buildLearningSystemInstruction(
+        const learningRes = buildLearningSystemInstruction(
           BASE_SYSTEM_INSTRUCTION,
           activePrefs,
           activeCorrs,
           activeDocs,
           text
         );
+
+        aiConfig.systemInstruction = learningRes.prompt;
 
         const contextMessages: ChatMessage[] = [];
         for (const h of history.slice(-12)) {
@@ -742,11 +757,27 @@ export class JarvisOrchestrator {
         contextMessages.push({ role: 'user', content: text });
 
         const aiRes = await executeAIConversation(contextMessages, aiConfig);
+        const appliedCorrection = learningRes.appliedCorrections[0];
+        const citations = learningRes.retrievedChunks.map(c => ({
+          id: c.id,
+          docTitle: c.docTitle,
+          sectionIndex: c.sectionIndex,
+          snippet: c.content.slice(0, 280) + (c.content.length > 280 ? '...' : ''),
+          fullContent: c.content
+        }));
+
         return {
           reply: aiRes.reply,
           needsClarification: false,
           audioText: aiRes.reply,
-          interpretedAction: `AI Conversation via ${aiRes.provider} (${aiRes.model})`
+          interpretedAction: `AI Conversation via ${aiRes.provider} (${aiRes.model})`,
+          appliedCorrection: appliedCorrection ? {
+            id: appliedCorrection.id,
+            originalRequest: appliedCorrection.originalRequest,
+            approvedCorrection: appliedCorrection.approvedCorrection,
+            scope: appliedCorrection.scope
+          } : undefined,
+          citations: citations.length > 0 ? citations : undefined
         };
       } catch (aiErr: any) {
         return {

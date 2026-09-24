@@ -185,6 +185,8 @@ export const App: React.FC = () => {
         sender: 'jarvis',
         content: response.reply,
         tool_calls: response.task ? [response.task] : undefined,
+        appliedCorrection: response.appliedCorrection,
+        citations: response.citations,
         created_at: new Date().toISOString()
       };
 
@@ -410,6 +412,10 @@ export const App: React.FC = () => {
             <LearningCenterModal
               prefilledCorrection={prefilledCorrection}
               onClose={() => setPrefilledCorrection(null)}
+              onRunRoutine={(routine) => {
+                setActiveTab('chat');
+                handleSendMessage(`Run routine: ${routine.name}`);
+              }}
             />
           )}
 
@@ -429,6 +435,14 @@ export const App: React.FC = () => {
         onClose={() => setIsDiagnosticsOpen(false)}
         language={language}
         onLanguageChange={handleLanguageChange}
+        onTeachCorrection={(heard, interp) => {
+          setIsDiagnosticsOpen(false);
+          setPrefilledCorrection({
+            originalRequest: heard,
+            incorrectInterpretation: interp
+          });
+          setActiveTab('learning');
+        }}
       />
 
       {reviewTranscript && (

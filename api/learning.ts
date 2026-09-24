@@ -1,14 +1,29 @@
-import { DEFAULT_PREFERENCES, UserPreference, UserCorrection, DocumentKnowledge } from './learningService.js';
+import {
+  DEFAULT_PREFERENCES,
+  DEFAULT_ROUTINES,
+  UserPreference,
+  UserCorrection,
+  DocumentKnowledge,
+  ReusableRoutine,
+  chunkDocument
+} from './learningService.js';
 
 // In-memory fallback storage for serverless runtime
 let preferencesStore: UserPreference[] = [...DEFAULT_PREFERENCES];
 let correctionsStore: UserCorrection[] = [];
+let routinesStore: ReusableRoutine[] = [...DEFAULT_ROUTINES];
 let documentsStore: DocumentKnowledge[] = [
   {
     id: 'doc-welcome',
     title: 'JARVIS System Architecture & Directives',
-    content: 'J.A.R.V.I.S. (Just A Rather Very Intelligent System) is engineered for autonomous desktop automation, context-aware reasoning, and personal productivity. Built with privacy-first principles and bounded tool execution.',
+    content: 'J.A.R.V.I.S. (Just A Rather Very Intelligent System) is engineered for autonomous desktop automation, context-aware reasoning, and personal productivity. Built with privacy-first principles and bounded tool execution.\n\nAll tools require verified user consent for external communications and destructive local changes. Grounded knowledge retrieval enforces strict untrusted evidence boundaries.',
+    fileType: 'md',
     tags: ['system', 'architecture', 'directives'],
+    chunks: chunkDocument(
+      'doc-welcome',
+      'JARVIS System Architecture & Directives',
+      'J.A.R.V.I.S. (Just A Rather Very Intelligent System) is engineered for autonomous desktop automation, context-aware reasoning, and personal productivity. Built with privacy-first principles and bounded tool execution.\n\nAll tools require verified user consent for external communications and destructive local changes. Grounded knowledge retrieval enforces strict untrusted evidence boundaries.'
+    ),
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   }
@@ -39,10 +54,25 @@ export default async function handler(req: any, res: any) {
     }
   }
 
-  const { tab = 'all', id } = req.query;
+  const { tab = 'all', id, export: exportFlag } = req.query;
 
-  // GET: Retrieve preferences, corrections, or documents
+  // GET: Retrieve preferences, corrections, documents, routines, or export
   if (req.method === 'GET') {
+    if (exportFlag === 'json' || tab === 'export') {
+      res.status(200).json({
+        success: true,
+        version: '1.2.0',
+        exportedAt: new Date().toISOString(),
+        data: {
+          preferences: preferencesStore,
+          corrections: correctionsStore,
+          documents: documentsStore,
+          routines: routinesStore
+        }
+      });
+      return;
+    }
+
     if (tab === 'preferences') {
       res.status(200).json({ success: true, preferences: preferencesStore });
       return;
@@ -55,12 +85,17 @@ export default async function handler(req: any, res: any) {
       res.status(200).json({ success: true, documents: documentsStore });
       return;
     }
+    if (tab === 'routines') {
+      res.status(200).json({ success: true, routines: routinesStore });
+      return;
+    }
 
     res.status(200).json({
       success: true,
       preferences: preferencesStore,
       corrections: correctionsStore,
-      documents: documentsStore
+      documents: documentsStore,
+      routines: routinesStore
     });
     return;
   }
@@ -95,6 +130,9 @@ export default async function handler(req: any, res: any) {
         originalRequest: data.originalRequest,
         incorrectInterpretation: data.incorrectInterpretation,
         approvedCorrection: data.approvedCorrection,
+        scope: data.scope || 'reusable',
+        conversationId: data.conversationId,
+        tags: Array.isArray(data.tags) ? data.tags : [],
         created_at: new Date().toISOString()
       };
       correctionsStore.push(newCorr);
@@ -103,16 +141,43 @@ export default async function handler(req: any, res: any) {
     }
 
     if (type === 'document') {
+      const docId = `doc-${Date.now().toString(36)}`;
+      const docTitle = data.title || 'Untitled Document';
+      const docContent = data.content || '';
+      const chunks = chunkDocument(docId, docTitle, docContent);
+
       const newDoc: DocumentKnowledge = {
-        id: `doc-${Date.now().toString(36)}`,
-        title: data.title,
-        content: data.content,
+        id: docId,
+        title: docTitle,
+        content: docContent,
+        fileType: data.fileType || 'txt',
+        fileSize: data.fileSize || docContent.length,
         tags: Array.isArray(data.tags) ? data.tags : [],
+        chunks,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
       documentsStore.push(newDoc);
       res.status(200).json({ success: true, item: newDoc });
+      return;
+    }
+
+    if (type === 'routine') {
+      const newRoutine: ReusableRoutine = {
+        id: `routine-${Date.now().toString(36)}`,
+        name: data.name,
+        description: data.description || '',
+        inputs: data.inputs || {},
+        steps: Array.isArray(data.steps) ? data.steps : [],
+        requiredConnections: Array.isArray(data.requiredConnections) ? data.requiredConnections : [],
+        requiredPermissions: Array.isArray(data.requiredPermissions) ? data.requiredPermissions : [],
+        schedule: data.schedule || { enabled: false, timezone: 'Asia/Karachi' },
+        enabled: data.enabled ?? true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      routinesStore.push(newRoutine);
+      res.status(200).json({ success: true, item: newRoutine });
       return;
     }
 
@@ -142,15 +207,45 @@ export default async function handler(req: any, res: any) {
       }
     }
 
+    if (type === 'correction') {
+      const idx = correctionsStore.findIndex(c => c.id === itemId);
+      if (idx >= 0) {
+        correctionsStore[idx] = {
+          ...correctionsStore[idx],
+          ...data
+        };
+        res.status(200).json({ success: true, item: correctionsStore[idx] });
+        return;
+      }
+    }
+
     if (type === 'document') {
       const idx = documentsStore.findIndex(d => d.id === itemId);
       if (idx >= 0) {
+        const updatedTitle = data.title ?? documentsStore[idx].title;
+        const updatedContent = data.content ?? documentsStore[idx].content;
+        const updatedChunks = chunkDocument(itemId, updatedTitle, updatedContent);
+
         documentsStore[idx] = {
           ...documentsStore[idx],
           ...data,
+          chunks: updatedChunks,
           updated_at: new Date().toISOString()
         };
         res.status(200).json({ success: true, item: documentsStore[idx] });
+        return;
+      }
+    }
+
+    if (type === 'routine') {
+      const idx = routinesStore.findIndex(r => r.id === itemId);
+      if (idx >= 0) {
+        routinesStore[idx] = {
+          ...routinesStore[idx],
+          ...data,
+          updated_at: new Date().toISOString()
+        };
+        res.status(200).json({ success: true, item: routinesStore[idx] });
         return;
       }
     }
@@ -179,6 +274,12 @@ export default async function handler(req: any, res: any) {
     if (itemType === 'documents' || itemType === 'document') {
       documentsStore = documentsStore.filter(d => d.id !== targetId);
       res.status(200).json({ success: true, message: 'Document deleted' });
+      return;
+    }
+
+    if (itemType === 'routines' || itemType === 'routine') {
+      routinesStore = routinesStore.filter(r => r.id !== targetId);
+      res.status(200).json({ success: true, message: 'Routine deleted' });
       return;
     }
 

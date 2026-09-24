@@ -91,7 +91,9 @@ router.post('/', async (req: Request, res: Response) => {
       needsClarification: result.needsClarification,
       clarificationQuestion: result.clarificationQuestion,
       task: result.task,
-      memorySaved: result.memorySaved
+      memorySaved: result.memorySaved,
+      appliedCorrection: result.appliedCorrection,
+      citations: result.citations
     });
   } catch (err: any) {
     console.error('Chat error:', err);

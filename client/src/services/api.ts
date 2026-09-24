@@ -1,9 +1,26 @@
+export interface Citation {
+  id: string;
+  docTitle: string;
+  sectionIndex: number;
+  snippet: string;
+  fullContent: string;
+}
+
+export interface AppliedCorrection {
+  id: string;
+  originalRequest: string;
+  approvedCorrection: string;
+  scope: 'once' | 'conversation' | 'reusable';
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
   sender: 'user' | 'jarvis' | 'system';
   content: string;
   tool_calls?: any;
+  appliedCorrection?: AppliedCorrection;
+  citations?: Citation[];
   created_at: string;
 }
 
@@ -221,14 +238,61 @@ export interface UserCorrection {
   originalRequest: string;
   incorrectInterpretation: string;
   approvedCorrection: string;
+  scope: 'once' | 'conversation' | 'reusable';
+  conversationId?: string;
+  tags?: string[];
   created_at: string;
+}
+
+export interface DocumentChunk {
+  id: string;
+  docId: string;
+  docTitle: string;
+  sectionIndex: number;
+  content: string;
+  charCount: number;
 }
 
 export interface DocumentKnowledge {
   id: string;
   title: string;
   content: string;
+  fileType?: 'txt' | 'md' | 'json' | 'csv' | 'pdf' | 'docx';
+  fileSize?: number;
   tags: string[];
+  chunks?: DocumentChunk[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RoutineStep {
+  id: string;
+  name: string;
+  action: string;
+  toolName?: string;
+  args?: Record<string, any>;
+  requiresApproval?: boolean;
+}
+
+export interface ReusableRoutine {
+  id: string;
+  name: string;
+  description: string;
+  inputs: Record<string, { label: string; type: 'string' | 'number' | 'boolean'; defaultValue: any }>;
+  steps: RoutineStep[];
+  requiredConnections: string[];
+  requiredPermissions: string[];
+  schedule?: {
+    enabled: boolean;
+    time?: string;
+    timezone: string;
+  };
+  lastRun?: {
+    timestamp: string;
+    status: 'success' | 'failed';
+    summary?: string;
+  };
+  enabled: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -315,6 +379,45 @@ export function getStoredDocuments(): DocumentKnowledge[] {
 
 export function saveStoredDocuments(docs: DocumentKnowledge[]) {
   localStorage.setItem('jarvis_learning_documents', JSON.stringify(docs));
+}
+
+export const DEFAULT_CLIENT_ROUTINES: ReusableRoutine[] = [
+  {
+    id: 'routine-daily-briefing',
+    name: 'Prepare My Daily Briefing',
+    description: 'Summarizes today’s authorized calendar agenda, active priority tasks, and top market/tech briefing in a structured morning overview.',
+    inputs: {
+      includeWeather: { label: 'Include Local Weather (Karachi)', type: 'boolean', defaultValue: true },
+      taskLimit: { label: 'Max Tasks to Review', type: 'number', defaultValue: 5 }
+    },
+    steps: [
+      { id: 'step-cal', name: 'Fetch Today’s Calendar Schedule', action: 'calendar_list_events', requiresApproval: false },
+      { id: 'step-tasks', name: 'Review Pending Priority Tasks', action: 'tasks_list_pending', requiresApproval: false },
+      { id: 'step-synth', name: 'Synthesize Structured Briefing', action: 'ai_synthesize_briefing', requiresApproval: false }
+    ],
+    requiredConnections: ['calendar', 'tasks'],
+    requiredPermissions: ['read_calendar', 'read_tasks'],
+    schedule: {
+      enabled: false,
+      time: '09:00',
+      timezone: 'Asia/Karachi'
+    },
+    enabled: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  }
+];
+
+export function getStoredRoutines(): ReusableRoutine[] {
+  try {
+    const raw = localStorage.getItem('jarvis_learning_routines');
+    if (raw) return JSON.parse(raw);
+  } catch { /* noop */ }
+  return DEFAULT_CLIENT_ROUTINES;
+}
+
+export function saveStoredRoutines(routines: ReusableRoutine[]) {
+  localStorage.setItem('jarvis_learning_routines', JSON.stringify(routines));
 }
 
 /**
@@ -557,6 +660,74 @@ export const api = {
     } catch { /* local sync */ }
     const current = getStoredDocuments();
     saveStoredDocuments(current.filter(d => d.id !== id));
+  },
+
+  async getRoutines(): Promise<ReusableRoutine[]> {
+    try {
+      const data = await fetchJson<{ success: boolean; routines: ReusableRoutine[] }>(`${API_BASE}/learning?tab=routines`);
+      if (data.routines) {
+        saveStoredRoutines(data.routines);
+        return data.routines;
+      }
+    } catch { /* fallback */ }
+    return getStoredRoutines();
+  },
+
+  async saveRoutine(routine: Omit<ReusableRoutine, 'id' | 'created_at' | 'updated_at'>): Promise<ReusableRoutine> {
+    const newItem: ReusableRoutine = {
+      ...routine,
+      id: `routine-${Date.now().toString(36)}`,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    try {
+      await fetchJson(`${API_BASE}/learning`, {
+        method: 'POST',
+        body: JSON.stringify({ type: 'routine', data: newItem })
+      });
+    } catch { /* local sync */ }
+    const current = getStoredRoutines();
+    const updated = [...current, newItem];
+    saveStoredRoutines(updated);
+    return newItem;
+  },
+
+  async updateRoutine(id: string, updates: Partial<ReusableRoutine>): Promise<void> {
+    try {
+      await fetchJson(`${API_BASE}/learning`, {
+        method: 'PUT',
+        body: JSON.stringify({ type: 'routine', id, data: updates })
+      });
+    } catch { /* local sync */ }
+    const current = getStoredRoutines();
+    const updated = current.map(r => r.id === id ? { ...r, ...updates, updated_at: new Date().toISOString() } : r);
+    saveStoredRoutines(updated);
+  },
+
+  async deleteRoutine(id: string): Promise<void> {
+    try {
+      await fetchJson(`${API_BASE}/learning?tab=routines&id=${id}`, { method: 'DELETE' });
+    } catch { /* local sync */ }
+    const current = getStoredRoutines();
+    saveStoredRoutines(current.filter(r => r.id !== id));
+  },
+
+  async exportLearningData(): Promise<any> {
+    try {
+      const data = await fetchJson<any>(`${API_BASE}/learning?export=json`);
+      return data;
+    } catch {
+      return {
+        version: '1.2.0',
+        exportedAt: new Date().toISOString(),
+        data: {
+          preferences: getStoredPreferences(),
+          corrections: getStoredCorrections(),
+          documents: getStoredDocuments(),
+          routines: getStoredRoutines()
+        }
+      };
+    }
   },
 
   async getHistory(conversationId = 'default'): Promise<Message[]> {
