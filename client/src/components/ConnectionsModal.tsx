@@ -404,28 +404,21 @@ export const ConnectionsModal: React.FC = () => {
                   ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                   : authStatus?.passcodeRequired
                   ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                  : authStatus?.environment === 'production' && !authStatus?.configured
-                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
                   : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
               }`}
             >
               {authStatus?.authenticated ? (
                 <>
                   <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                  <span>AUTHENTICATED OWNER</span>
+                  <span>{authStatus?.passcodeRequired ? 'AUTHENTICATED OWNER' : 'PERSONAL SECURE (ACTIVE)'}</span>
                 </>
               ) : authStatus?.passcodeRequired ? (
                 <>
                   <Lock className="w-3 h-3 text-amber-400" />
                   <span>PASSCODE REQUIRED</span>
                 </>
-              ) : authStatus?.environment === 'production' && !authStatus?.configured ? (
-                <>
-                  <AlertCircle className="w-3 h-3 text-rose-400" />
-                  <span>LOCKED (FAIL-CLOSED)</span>
-                </>
               ) : (
-                'LOCAL DEV (OWNER GRANTED)'
+                'PERSONAL PROTECTED'
               )}
             </span>
           </div>
@@ -439,18 +432,24 @@ export const ConnectionsModal: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="text-emerald-300 font-mono font-semibold flex items-center gap-1.5">
                   <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  Authenticated as Owner ({authStatus.userId || 'owner'})
+                  {authStatus.passcodeRequired
+                    ? `Authenticated as Owner (${authStatus.userId || 'owner'})`
+                    : `Personal Deployment Active (${authStatus.userId || 'owner'})`}
                 </span>
-                <button
-                  onClick={handleLogout}
-                  disabled={authLoading}
-                  className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono"
-                >
-                  {authLoading ? 'Signing out...' : 'Sign Out'}
-                </button>
+                {authStatus.passcodeRequired && (
+                  <button
+                    onClick={handleLogout}
+                    disabled={authLoading}
+                    className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono"
+                  >
+                    {authLoading ? 'Signing out...' : 'Sign Out'}
+                  </button>
+                )}
               </div>
               <div className="text-[11px] text-slate-400">
-                You have full access to chat, memory, documents, routines, and desktop automation.
+                {authStatus.passcodeRequired
+                  ? 'HMAC-SHA256 session token active. Full access to chat, memory, documents, routines, and desktop automation.'
+                  : 'Sliding-window IP rate limiting and payload bounding active. To enable passcode protection on public deployments, set JARVIS_ACCESS_PASSCODE in your Vercel settings.'}
               </div>
             </div>
           ) : (

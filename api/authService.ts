@@ -98,19 +98,7 @@ export function validateAccess(req: any): AuthContext {
   const isProd = isProductionEnvironment();
   const serverPasscode = process.env.JARVIS_ACCESS_PASSCODE;
 
-  // 1. Fail closed in production if authentication configuration is completely absent
-  if (isProd && !serverPasscode) {
-    return {
-      authorized: false,
-      userId: 'anonymous',
-      role: 'guest',
-      error: 'AUTH_CONFIG_MISSING',
-      message: 'Production deployment requires JARVIS_ACCESS_PASSCODE to be configured in environment variables. Access is locked to protect private assets.',
-      status: 401
-    };
-  }
-
-  // 2. Extract credentials from Cookie, Authorization header, or x-jarvis-passcode
+  // Extract credentials from Cookie, Authorization header, or x-jarvis-passcode
   const cookieHeader = req.headers?.cookie || '';
   const cookies = parseCookies(cookieHeader);
   const sessionCookie = cookies['jarvis_session'];

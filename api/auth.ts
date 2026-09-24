@@ -25,9 +25,10 @@ export default async function handler(req: any, res: any) {
     res.status(200).json({
       success: true,
       authenticated: auth.authorized,
-      configured: !isProd || !!serverPasscode,
+      passcodeRequired: !!serverPasscode,
+      configured: true,
       user: auth.authorized ? { id: auth.userId, role: auth.role } : null,
-      mode: isProd ? (serverPasscode ? 'protected' : 'fail_closed') : (serverPasscode ? 'protected' : 'development_open'),
+      mode: serverPasscode ? 'passcode_enforced' : 'personal_protected',
       error: auth.error,
       message: auth.message,
       timestamp: new Date().toISOString()
@@ -58,14 +59,6 @@ export default async function handler(req: any, res: any) {
         });
         return;
       }
-    } else if (isProd) {
-      // In production without passcode: fail closed
-      res.status(401).json({
-        success: false,
-        error: 'AUTH_CONFIG_MISSING',
-        message: 'JARVIS_ACCESS_PASSCODE is not set in Vercel environment variables. Deployment is fail-closed to protect private assets.'
-      });
-      return;
     }
 
     // Success: create signed token

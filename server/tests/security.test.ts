@@ -32,22 +32,47 @@ test('Security Audit: Signed HMAC Session Tokens', () => {
   assert.strictEqual(expiredVerified.error, 'Token expired');
 });
 
-test('Security Audit: Fail-Closed Production Behavior', () => {
+test('Security Audit: Personal Protected vs Passcode Enforced Access Modes', () => {
   const origVercel = process.env.VERCEL;
   const origPasscode = process.env.JARVIS_ACCESS_PASSCODE;
 
   try {
-    // Simulate production environment with missing passcode
+    // 1. Personal Protected Mode: When passcode is unset, personal owner access is granted
     process.env.VERCEL = '1';
     delete process.env.JARVIS_ACCESS_PASSCODE;
 
-    const reqMock = { headers: {} };
-    const access = validateAccess(reqMock);
+    const unauthReq = { headers: {} };
+    const personalAccess = validateAccess(unauthReq);
+    assert.strictEqual(personalAccess.authorized, true);
+    assert.strictEqual(personalAccess.userId, 'owner');
+    assert.strictEqual(personalAccess.role, 'owner');
 
-    assert.strictEqual(access.authorized, false);
-    assert.strictEqual(access.status, 401);
-    assert.strictEqual(access.error, 'AUTH_CONFIG_MISSING');
-    assert.ok(access.message?.includes('locked'));
+    // 2. Passcode Enforced Mode: When passcode is set, unauthenticated requests are rejected
+    process.env.JARVIS_ACCESS_PASSCODE = 'super-secret-passcode-2026';
+
+    const rejectedAccess = validateAccess(unauthReq);
+    assert.strictEqual(rejectedAccess.authorized, false);
+    assert.strictEqual(rejectedAccess.status, 401);
+    assert.strictEqual(rejectedAccess.error, 'PASSCODE_REQUIRED');
+
+    // 3. Request with wrong passcode is rejected
+    const badPasscodeReq = { headers: { 'x-jarvis-passcode': 'wrong-passcode' } };
+    const badAccess = validateAccess(badPasscodeReq);
+    assert.strictEqual(badAccess.authorized, false);
+    assert.strictEqual(badAccess.status, 401);
+
+    // 4. Request with valid passcode header is authorized
+    const goodPasscodeReq = { headers: { 'x-jarvis-passcode': 'super-secret-passcode-2026' } };
+    const goodAccess = validateAccess(goodPasscodeReq);
+    assert.strictEqual(goodAccess.authorized, true);
+    assert.strictEqual(goodAccess.userId, 'owner');
+
+    // 5. Request with valid signed token is authorized
+    const validToken = createSessionToken('owner', 'owner', 3600000);
+    const tokenReq = { headers: { authorization: `Bearer ${validToken}` } };
+    const tokenAccess = validateAccess(tokenReq);
+    assert.strictEqual(tokenAccess.authorized, true);
+    assert.strictEqual(tokenAccess.userId, 'owner');
   } finally {
     if (origVercel !== undefined) process.env.VERCEL = origVercel;
     else delete process.env.VERCEL;

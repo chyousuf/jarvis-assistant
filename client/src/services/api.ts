@@ -493,7 +493,7 @@ export async function fetchJson<T = any>(url: string, options: RequestInit = {})
   }
 
   if (!res.ok) {
-    throw new Error(data?.error || `HTTP ${res.status}: ${res.statusText}`);
+    throw new Error(data?.message || data?.error || `HTTP ${res.status}: ${res.statusText}`);
   }
 
   return data as T;

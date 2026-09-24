@@ -13,9 +13,10 @@ router.get(['/', '/status'], (req: Request, res: Response) => {
   res.json({
     success: true,
     authenticated: auth.authorized,
-    configured: !isProd || !!serverPasscode,
+    passcodeRequired: !!serverPasscode,
+    configured: true,
     user: auth.authorized ? { id: auth.userId, role: auth.role } : null,
-    mode: isProd ? (serverPasscode ? 'protected' : 'fail_closed') : (serverPasscode ? 'protected' : 'development_open'),
+    mode: serverPasscode ? 'passcode_enforced' : 'personal_protected',
     error: auth.error,
     message: auth.message,
     timestamp: new Date().toISOString()
@@ -41,13 +42,6 @@ router.post('/login', (req: Request, res: Response) => {
       });
       return;
     }
-  } else if (isProd) {
-    res.status(401).json({
-      success: false,
-      error: 'AUTH_CONFIG_MISSING',
-      message: 'JARVIS_ACCESS_PASSCODE is not set in environment variables. Deployment is fail-closed.'
-    });
-    return;
   }
 
   const token = createSessionToken('owner', 'owner');
