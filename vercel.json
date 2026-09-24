@@ -5,6 +5,10 @@
   "outputDirectory": "client/dist",
   "rewrites": [
     {
+      "source": "/api/ai/:match*",
+      "destination": "/api/ai"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

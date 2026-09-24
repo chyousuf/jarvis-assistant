@@ -275,7 +275,7 @@ export const api = {
     environment: string;
     passcodeRequired: boolean;
   }> {
-    return fetchJson(`${API_BASE}/ai/status`);
+    return fetchJson(`${API_BASE}/ai`);
   },
 
   async testAIConnection(prompt = 'What is 17 multiplied by 6?'): Promise<{
@@ -289,7 +289,7 @@ export const api = {
     errorMessage?: string;
     testedAt: string;
   }> {
-    return fetchJson(`${API_BASE}/ai/test`, {
+    return fetchJson(`${API_BASE}/ai`, {
       method: 'POST',
       body: JSON.stringify({ prompt })
     });
