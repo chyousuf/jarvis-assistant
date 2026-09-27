@@ -78,3 +78,21 @@ export function resolveContact(query: string): ContactResolution {
     query
   };
 }
+
+export default async function handler(req: any, res: any) {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-jarvis-passcode, x-jarvis-token, x-jarvis-user-id');
+
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+
+  res.status(200).json({
+    success: true,
+    contacts: APPROVED_CONTACTS
+  });
+}
+

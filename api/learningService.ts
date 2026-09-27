@@ -366,3 +366,9 @@ export function buildLearningSystemInstruction(
 
   return { prompt, appliedCorrections, retrievedChunks };
 }
+
+export default function handler(req: any, res: any) {
+  res.setHeader('Content-Type', 'application/json');
+  res.status(200).json({ success: true, service: 'learningService' });
+}
+

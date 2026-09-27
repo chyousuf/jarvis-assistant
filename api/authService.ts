@@ -159,3 +159,9 @@ export function validateAccess(req: any): AuthContext {
     role: 'owner'
   };
 }
+
+export default function handler(req: any, res: any) {
+  res.setHeader('Content-Type', 'application/json');
+  res.status(200).json({ success: true, service: 'authService' });
+}
+
