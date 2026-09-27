@@ -126,6 +126,150 @@ export function extractYouTubeQuery(prompt: string, history: Array<{ role: strin
   return '';
 }
 
+export interface ParsedWhatsAppIntent {
+  isWhatsApp: boolean;
+  isDiagnosis: boolean;
+  isConfirmation: boolean;
+  recipient?: string;
+  message?: string;
+}
+
+export function parseWhatsAppIntent(text: string, history: Array<{ role: string; content?: string }> = []): ParsedWhatsAppIntent {
+  const trimmed = text.trim();
+  const lower = trimmed.toLowerCase();
+
+  // 1. Diagnosis / Status / Problem Inquiry: "whatsapp msg not working", "whatsapp not working", etc.
+  if (
+    /whatsapp\b.*?(?:not\s+working|error|issue|problem|broken|help|how\s+to\s+use|status|kaise\s+use)/i.test(trimmed) ||
+    /(?:not\s+working|problem\s+with|issue\s+with)\b.*?\bwhatsapp/i.test(trimmed) ||
+    lower === 'whatsapp' ||
+    lower === 'whatsapp msg' ||
+    lower === 'whatsapp message' ||
+    lower === 'whatsapp not working' ||
+    lower === 'whatsapp msg not working'
+  ) {
+    return { isWhatsApp: true, isDiagnosis: true, isConfirmation: false };
+  }
+
+  // 2. Confirmation of a previously prepared WhatsApp message:
+  const confirmTokens = ['confirm', 'confirm send', 'send it', 'yes', 'authorize', 'proceed', 'theek hai', 'haan bhejo', 'kardo', 'approve', 'send'];
+  const isConfirmToken = confirmTokens.includes(lower) || /^(?:yes[,.\s]+)?(?:confirm|send\s+it|proceed|authorize|kardo|approve)$/i.test(lower);
+
+  if (isConfirmToken && history && history.length > 0) {
+    const lastAssistant = [...history].reverse().find(m => m.role === 'assistant' || m.role === 'model');
+    if (lastAssistant?.content && (
+      lastAssistant.content.includes('WhatsApp Confirmation Required') ||
+      lastAssistant.content.includes('Open in WhatsApp') ||
+      lastAssistant.content.includes('Send via WhatsApp') ||
+      lastAssistant.content.includes('wa.me')
+    )) {
+      const recipientMatch = lastAssistant.content.match(/\*\*Recipient\*\*:\s*([^\n\(\)]+)/i);
+      const msgMatch = lastAssistant.content.match(/\*\*Message\*\*:\s*["“]([\s\S]+?)["”]/i);
+      if (recipientMatch || lastAssistant.content.includes('wa.me')) {
+        return {
+          isWhatsApp: true,
+          isDiagnosis: false,
+          isConfirmation: true,
+          recipient: recipientMatch ? recipientMatch[1].trim() : 'Recipient',
+          message: msgMatch ? msgMatch[1].trim() : ''
+        };
+      }
+    }
+  }
+
+  // 3. English Patterns
+  let m = trimmed.match(/(?:send\s+(?:a\s+)?whatsapp(?:\s+msg|\s+message)?\s+to|whatsapp(?:\s+msg|\s+message)?\s+to)\s+([a-zA-Z0-9_\s+]+?)(?:\s+(?:saying|with\s+message|that|:)\s*|\s*:\s*)([\s\S]+)?$/i);
+  if (m) {
+    return {
+      isWhatsApp: true,
+      isDiagnosis: false,
+      isConfirmation: false,
+      recipient: m[1].trim(),
+      message: m[2]?.trim() || ''
+    };
+  }
+
+  m = trimmed.match(/^whatsapp\s+([a-zA-Z0-9_\s+]+?)(?:\s+(?:saying|that|with\s+message)\s+|\s*:\s*)([\s\S]+)$/i);
+  if (m && !['kholo', 'open', 'web', 'status', 'karo'].includes(m[1].toLowerCase().trim())) {
+    return {
+      isWhatsApp: true,
+      isDiagnosis: false,
+      isConfirmation: false,
+      recipient: m[1].trim(),
+      message: m[2]?.trim() || ''
+    };
+  }
+
+  m = trimmed.match(/send\s+(?:a\s+)?(?:msg|message)\s+to\s+([a-zA-Z0-9_\s+]+?)\s+on\s+whatsapp(?:\s+(?:saying|with\s+message|that|:)\s*|\s*:\s*)([\s\S]+)?$/i);
+  if (m) {
+    return {
+      isWhatsApp: true,
+      isDiagnosis: false,
+      isConfirmation: false,
+      recipient: m[1].trim(),
+      message: m[2]?.trim() || ''
+    };
+  }
+
+  m = trimmed.match(/(?:message|msg)\s+([a-zA-Z0-9_\s+]+?)\s+on\s+whatsapp(?:\s+(?:saying|with\s+message|that|:)\s*|\s*:\s*)([\s\S]+)?$/i);
+  if (m) {
+    return {
+      isWhatsApp: true,
+      isDiagnosis: false,
+      isConfirmation: false,
+      recipient: m[1].trim(),
+      message: m[2]?.trim() || ''
+    };
+  }
+
+  m = trimmed.match(/^send\s+(?:a\s+)?whatsapp(?:\s+msg|\s+message)?\s+to\s+([a-zA-Z0-9_\s+]+)$/i);
+  if (m) {
+    return {
+      isWhatsApp: true,
+      isDiagnosis: false,
+      isConfirmation: false,
+      recipient: m[1].trim(),
+      message: ''
+    };
+  }
+
+  // 4. Urdu / Roman-Urdu Patterns
+  m = trimmed.match(/^([a-zA-Z0-9_\s+]+?)\s+ko\s+(?:whatsapp\s+)?(?:message|msg)\s+(?:likho|bhejo|karo)(?:\s+(?:keh\s+|:\s*|\s*)([\s\S]+))?$/i);
+  if (m) {
+    return {
+      isWhatsApp: true,
+      isDiagnosis: false,
+      isConfirmation: false,
+      recipient: m[1].trim(),
+      message: m[2]?.trim() || ''
+    };
+  }
+
+  m = trimmed.match(/^([a-zA-Z0-9_\s+]+?)\s+ko\s+whatsapp\s+karo(?:\s+(?:keh\s+|:\s*|\s*)([\s\S]+))?$/i);
+  if (m) {
+    return {
+      isWhatsApp: true,
+      isDiagnosis: false,
+      isConfirmation: false,
+      recipient: m[1].trim(),
+      message: m[2]?.trim() || ''
+    };
+  }
+
+  m = trimmed.match(/whatsapp\s+(?:pe|par|pa)\s+([a-zA-Z0-9_\s+]+?)\s+ko\s+(?:message|msg)\s+(?:bhejo|likho|karo)(?:\s+(?:keh\s+|:\s*|\s*)([\s\S]+))?$/i);
+  if (m) {
+    return {
+      isWhatsApp: true,
+      isDiagnosis: false,
+      isConfirmation: false,
+      recipient: m[1].trim(),
+      message: m[2]?.trim() || ''
+    };
+  }
+
+  return { isWhatsApp: false, isDiagnosis: false, isConfirmation: false };
+}
+
 export class JarvisOrchestrator {
   /**
    * Main entry point to process a user command (text or voice, in English, Urdu, or mixed Roman-Urdu)
@@ -543,16 +687,19 @@ export class JarvisOrchestrator {
     }
 
     // 3. WhatsApp Messaging Commands (English & Roman-Urdu)
-    // Matches: "Send a WhatsApp message to Ahmed saying I will be 10 minutes late"
-    // Urdu: "Ahmed ko WhatsApp message bhejo keh mein 10 minute late hunga" or "Ahmed ko message likho"
-    const waEnglishMatch = text.match(/send\s+(?:a\s+)?whatsapp(?:\s+message)?\s+to\s+([a-zA-Z0-9_\s]+?)(?:\s+(?:saying|with\s+message|that)\s+([\s\S]+))?$/i);
-    const waUrduMatch = text.match(/([a-zA-Z0-9_\s]+?)\s+ko\s+(?:whatsapp\s+)?message\s+(?:likho|bhejo|karo)(?:\s+(?:keh\s+)?([\s\S]+))?$/i);
+    const waIntent = parseWhatsAppIntent(text, history);
+    if (waIntent.isWhatsApp) {
+      if (waIntent.isDiagnosis) {
+        return {
+          reply: `💬 **WhatsApp Integration Status & Diagnostics**:\n\n- **Direct Handoff (\`wa.me\`)**: Active & Operational.\n- **Meta Cloud API**: Awaiting credentials in Connections.\n\n### How to Message on WhatsApp:\n- *"Send a WhatsApp message to Ali saying hello"*\n- *"Ahmed Raza ko WhatsApp message bhejo keh meeting start ho gayi hai"*\n- *"Send WhatsApp to +923001234567 saying I am on my way"*`,
+          needsClarification: false,
+          audioText: "WhatsApp messaging is ready with direct handoff and contact integration.",
+          interpretedAction: 'WhatsApp diagnostics and guide'
+        };
+      }
 
-    const waMatch = waEnglishMatch || waUrduMatch;
-    if (waMatch) {
-      const recipientQuery = (waEnglishMatch ? waEnglishMatch[1] : waUrduMatch![1]).trim();
-      const rawMessageContent = (waEnglishMatch ? waEnglishMatch[2] : waUrduMatch![2]);
-      const messageContent = rawMessageContent ? rawMessageContent.trim() : '';
+      const recipientQuery = waIntent.recipient || '';
+      const messageContent = waIntent.message || '';
 
       // Recipient resolution with Ambiguity Detection
       const resolution = resolveContact(recipientQuery);
@@ -604,6 +751,7 @@ export class JarvisOrchestrator {
           reply: `⚠️ **WhatsApp Confirmation Required**:\n\n- **Recipient**: ${prep.recipientName} (${prep.recipientPhone})\n- **Message**: "${prep.messageText}"\n- **Policy**: ${prep.eligibilityNote}\n- **Direct Handoff**: [Open in WhatsApp](${prep.handoffUrl})\n\nPlease authorize transmission in the prompt or say **"Confirm"** to dispatch.`,
           needsClarification: false,
           task,
+          openUrl: prep.handoffUrl,
           interpretedAction: `WhatsApp to ${prep.recipientName}: "${prep.messageText}"`,
           audioText: `I have prepared the WhatsApp message for ${prep.recipientName}. Please confirm before I send it.`
         };

@@ -1,6 +1,8 @@
 import aiHandler from './ai.js';
 import authHandler from './auth.js';
 import { validateAccess } from './authService.js';
+import { APPROVED_CONTACTS } from './contacts.js';
+import { listWhatsAppMessages, prepareWhatsAppMessage, sendWhatsAppMessage } from './whatsappService.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Content-Type', 'application/json');
@@ -76,12 +78,7 @@ export default async function handler(req: any, res: any) {
   if (path.startsWith('contacts')) {
     res.status(200).json({
       success: true,
-      contacts: [
-        { id: 'cnt-1', name: 'Ahmed Raza', email: 'ahmed.raza@example.com', phone: '+923001234567', company: 'Nexus Tech' },
-        { id: 'cnt-2', name: 'Ahmed Khan', email: 'ahmed.khan@example.com', phone: '+923219876543', company: 'Alpha Solutions' },
-        { id: 'cnt-3', name: 'Ali Hassan', email: 'ali.hassan@example.com', phone: '+923335551234', company: 'DevStudio' },
-        { id: 'cnt-4', name: 'Sarah Miller', email: 'sarah@example.com', phone: '+14155552671', company: 'CloudCorp' }
-      ]
+      contacts: APPROVED_CONTACTS
     });
     return;
   }
@@ -101,8 +98,40 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  if (path.startsWith('whatsapp')) {
-    res.status(200).json({ success: true, messages: [] });
+  // WhatsApp Sub-routes
+  if (path === 'whatsapp/prepare' && req.method === 'POST') {
+    try {
+      const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+      const { recipient, message } = body;
+      if (!recipient || !message) {
+        res.status(400).json({ success: false, error: 'Recipient and message are required.' });
+        return;
+      }
+      const prep = await prepareWhatsAppMessage(recipient, message);
+      res.status(200).json({ success: true, ...prep });
+      return;
+    } catch (err: any) {
+      res.status(400).json({ success: false, error: err.message });
+      return;
+    }
+  }
+
+  const sendMatch = path.match(/^whatsapp\/([^/]+)\/send$/);
+  if (sendMatch && req.method === 'POST') {
+    try {
+      const messageId = sendMatch[1];
+      const sent = await sendWhatsAppMessage(messageId);
+      res.status(200).json(sent);
+      return;
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+      return;
+    }
+  }
+
+  if (path === 'whatsapp' || path.startsWith('whatsapp')) {
+    const messages = listWhatsAppMessages();
+    res.status(200).json({ success: true, messages });
     return;
   }
 

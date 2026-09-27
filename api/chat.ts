@@ -2,6 +2,8 @@ import { resolveAIConfig, executeAIConversation, ChatMessage, BASE_SYSTEM_INSTRU
 import { resolveArithmeticWithContext } from './calculator.js';
 import { buildLearningSystemInstruction, retrieveRelevantPassages, UserCorrection, DocumentChunk } from './learningService.js';
 import { validateAccess } from './authService.js';
+import { resolveContact, formatCleanPhone, APPROVED_CONTACTS } from './contacts.js';
+import { prepareWhatsAppMessage } from './whatsappService.js';
 
 // In-memory sliding-window IP rate limiter
 const ipRequestWindow = new Map<string, number[]>();
@@ -108,6 +110,159 @@ export function extractYouTubeQuery(prompt: string, history: Array<{ role: strin
   }
 
   return '';
+}
+
+export interface ParsedWhatsAppIntent {
+  isWhatsApp: boolean;
+  isDiagnosis: boolean;
+  isConfirmation: boolean;
+  recipient?: string;
+  message?: string;
+}
+
+export function parseWhatsAppIntent(text: string, history: Array<{ role: string; content?: string }> = []): ParsedWhatsAppIntent {
+  const trimmed = text.trim();
+  const lower = trimmed.toLowerCase();
+
+  // 1. Diagnosis / Status / Problem Inquiry: "whatsapp msg not working", "whatsapp not working", etc.
+  if (
+    /whatsapp\b.*?(?:not\s+working|error|issue|problem|broken|help|how\s+to\s+use|status|kaise\s+use)/i.test(trimmed) ||
+    /(?:not\s+working|problem\s+with|issue\s+with)\b.*?\bwhatsapp/i.test(trimmed) ||
+    lower === 'whatsapp' ||
+    lower === 'whatsapp msg' ||
+    lower === 'whatsapp message' ||
+    lower === 'whatsapp not working' ||
+    lower === 'whatsapp msg not working'
+  ) {
+    return { isWhatsApp: true, isDiagnosis: true, isConfirmation: false };
+  }
+
+  // 2. Confirmation of a previously prepared WhatsApp message:
+  // e.g. "Confirm", "Confirm send", "Send it", "yes", "proceed", "theek hai", "haan bhejo", "kardo"
+  const confirmTokens = ['confirm', 'confirm send', 'send it', 'yes', 'authorize', 'proceed', 'theek hai', 'haan bhejo', 'kardo', 'approve', 'send'];
+  const isConfirmToken = confirmTokens.includes(lower) || /^(?:yes[,.\s]+)?(?:confirm|send\s+it|proceed|authorize|kardo|approve)$/i.test(lower);
+
+  if (isConfirmToken && history && history.length > 0) {
+    const lastAssistant = [...history].reverse().find(m => m.role === 'assistant' || m.role === 'model');
+    if (lastAssistant?.content && (
+      lastAssistant.content.includes('WhatsApp Confirmation Required') ||
+      lastAssistant.content.includes('Open in WhatsApp') ||
+      lastAssistant.content.includes('Send via WhatsApp') ||
+      lastAssistant.content.includes('wa.me')
+    )) {
+      const recipientMatch = lastAssistant.content.match(/\*\*Recipient\*\*:\s*([^\n\(\)]+)/i);
+      const msgMatch = lastAssistant.content.match(/\*\*Message\*\*:\s*["“]([\s\S]+?)["”]/i);
+      if (recipientMatch || lastAssistant.content.includes('wa.me')) {
+        return {
+          isWhatsApp: true,
+          isDiagnosis: false,
+          isConfirmation: true,
+          recipient: recipientMatch ? recipientMatch[1].trim() : 'Recipient',
+          message: msgMatch ? msgMatch[1].trim() : ''
+        };
+      }
+    }
+  }
+
+  // 3. English Patterns
+  // Pattern A: "send (a) whatsapp (message) to <recipient> saying/with message/that/: <message>"
+  let m = trimmed.match(/(?:send\s+(?:a\s+)?whatsapp(?:\s+msg|\s+message)?\s+to|whatsapp(?:\s+msg|\s+message)?\s+to)\s+([a-zA-Z0-9_\s+]+?)(?:\s+(?:saying|with\s+message|that|:)\s*|\s*:\s*)([\s\S]+)?$/i);
+  if (m) {
+    return {
+      isWhatsApp: true,
+      isDiagnosis: false,
+      isConfirmation: false,
+      recipient: m[1].trim(),
+      message: m[2]?.trim() || ''
+    };
+  }
+
+  // Pattern B: "whatsapp <recipient> saying/that/: <message>"
+  m = trimmed.match(/^whatsapp\s+([a-zA-Z0-9_\s+]+?)(?:\s+(?:saying|that|with\s+message)\s+|\s*:\s*)([\s\S]+)$/i);
+  if (m && !['kholo', 'open', 'web', 'status', 'karo'].includes(m[1].toLowerCase().trim())) {
+    return {
+      isWhatsApp: true,
+      isDiagnosis: false,
+      isConfirmation: false,
+      recipient: m[1].trim(),
+      message: m[2]?.trim() || ''
+    };
+  }
+
+  // Pattern C: "send (a) message/msg to <recipient> on whatsapp saying/with message/: <message>"
+  m = trimmed.match(/send\s+(?:a\s+)?(?:msg|message)\s+to\s+([a-zA-Z0-9_\s+]+?)\s+on\s+whatsapp(?:\s+(?:saying|with\s+message|that|:)\s*|\s*:\s*)([\s\S]+)?$/i);
+  if (m) {
+    return {
+      isWhatsApp: true,
+      isDiagnosis: false,
+      isConfirmation: false,
+      recipient: m[1].trim(),
+      message: m[2]?.trim() || ''
+    };
+  }
+
+  // Pattern D: "message/msg <recipient> on whatsapp saying/that/: <message>"
+  m = trimmed.match(/(?:message|msg)\s+([a-zA-Z0-9_\s+]+?)\s+on\s+whatsapp(?:\s+(?:saying|with\s+message|that|:)\s*|\s*:\s*)([\s\S]+)?$/i);
+  if (m) {
+    return {
+      isWhatsApp: true,
+      isDiagnosis: false,
+      isConfirmation: false,
+      recipient: m[1].trim(),
+      message: m[2]?.trim() || ''
+    };
+  }
+
+  // Pattern E: "send whatsapp (message) to <recipient>" (without message yet)
+  m = trimmed.match(/^send\s+(?:a\s+)?whatsapp(?:\s+msg|\s+message)?\s+to\s+([a-zA-Z0-9_\s+]+)$/i);
+  if (m) {
+    return {
+      isWhatsApp: true,
+      isDiagnosis: false,
+      isConfirmation: false,
+      recipient: m[1].trim(),
+      message: ''
+    };
+  }
+
+  // 4. Urdu / Roman-Urdu Patterns
+  // "<recipient> ko (whatsapp) message/msg likho/bhejo/karo keh/: <message>"
+  m = trimmed.match(/^([a-zA-Z0-9_\s+]+?)\s+ko\s+(?:whatsapp\s+)?(?:message|msg)\s+(?:likho|bhejo|karo)(?:\s+(?:keh\s+|:\s*|\s*)([\s\S]+))?$/i);
+  if (m) {
+    return {
+      isWhatsApp: true,
+      isDiagnosis: false,
+      isConfirmation: false,
+      recipient: m[1].trim(),
+      message: m[2]?.trim() || ''
+    };
+  }
+
+  // "<recipient> ko whatsapp karo keh <message>"
+  m = trimmed.match(/^([a-zA-Z0-9_\s+]+?)\s+ko\s+whatsapp\s+karo(?:\s+(?:keh\s+|:\s*|\s*)([\s\S]+))?$/i);
+  if (m) {
+    return {
+      isWhatsApp: true,
+      isDiagnosis: false,
+      isConfirmation: false,
+      recipient: m[1].trim(),
+      message: m[2]?.trim() || ''
+    };
+  }
+
+  // "whatsapp pe/par <recipient> ko message bhejo keh <message>"
+  m = trimmed.match(/whatsapp\s+(?:pe|par|pa)\s+([a-zA-Z0-9_\s+]+?)\s+ko\s+(?:message|msg)\s+(?:bhejo|likho|karo)(?:\s+(?:keh\s+|:\s*|\s*)([\s\S]+))?$/i);
+  if (m) {
+    return {
+      isWhatsApp: true,
+      isDiagnosis: false,
+      isConfirmation: false,
+      recipient: m[1].trim(),
+      message: m[2]?.trim() || ''
+    };
+  }
+
+  return { isWhatsApp: false, isDiagnosis: false, isConfirmation: false };
 }
 
 export default async function handler(req: any, res: any) {
@@ -253,6 +408,145 @@ export default async function handler(req: any, res: any) {
         reply: 'Immediate stop engaged, sir. All active speech synthesis and ongoing operations have been halted.',
         audioText: 'Stopped.',
         needsClarification: false,
+        conversationId
+      });
+      return;
+    }
+
+    // ==========================================
+    // WORKFLOW: WhatsApp Messaging & Diagnostics (Bilingual English & Urdu)
+    // Supports:
+    // - "whatsapp msg not working" (Diagnosis & address book guide)
+    // - "Send a WhatsApp message to Ali saying hello"
+    // - "whatsapp Ali: hello"
+    // - "send whatsapp to +923001234567 saying I am on my way"
+    // - "Ahmed Raza ko WhatsApp message bhejo keh meeting start ho gayi hai"
+    // - "Ali ko message bhejo keh kal milte hain"
+    // - "Confirm" / "Send it" / "theek hai" (Dispatches pending WhatsApp message)
+    // ==========================================
+    const waIntent = parseWhatsAppIntent(trimmed, history);
+    if (waIntent.isWhatsApp) {
+      if (waIntent.isDiagnosis) {
+        const contactList = APPROVED_CONTACTS.map(c => `- **${c.name}**: \`${c.phone}\` (${c.company})`).join('\n');
+        res.status(200).json({
+          success: true,
+          messageId: jarvisMsgId,
+          reply: `💬 **WhatsApp Integration Status & Messaging Guide**\n\nJARVIS is configured with verified WhatsApp direct handoff (\`wa.me\` protocol) and Meta Cloud API integration.\n\n### How to Message on WhatsApp:\n- **English**: *"Send a WhatsApp message to Ali saying hello"*\n- **Urdu**: *"Ahmed Raza ko WhatsApp message bhejo keh meeting start ho gayi hai"*\n- **Direct Number**: *"Send WhatsApp to +923001234567 saying I am on my way"*\n\n### Approved Address Book Contacts:\n${contactList}\n\n*Try typing: **"Send a WhatsApp message to Ali saying hello"** to test now.*`,
+          audioText: "WhatsApp messaging is ready. You can message any approved contact or phone number.",
+          needsClarification: false,
+          conversationId
+        });
+        return;
+      }
+
+      if (waIntent.isConfirmation) {
+        const resolution = resolveContact(waIntent.recipient || 'Ali');
+        const contactName = resolution.contact?.name || waIntent.recipient || 'Recipient';
+        const contactPhone = resolution.contact?.phone || '+923335551234';
+        const cleanPhone = formatCleanPhone(contactPhone);
+        const msgText = waIntent.message || 'Hello from JARVIS';
+        const handoffUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msgText)}`;
+
+        res.status(200).json({
+          success: true,
+          messageId: jarvisMsgId,
+          reply: `✅ **WhatsApp Message Dispatched**:\n\n- **Recipient**: ${contactName} (${contactPhone})\n- **Message**: "${msgText}"\n- **Direct Handoff**: [▶ Open in WhatsApp](${handoffUrl})\n\n*Opening WhatsApp in your browser/app...*`,
+          audioText: `WhatsApp message confirmed and opening for ${contactName}.`,
+          openUrl: handoffUrl,
+          needsClarification: false,
+          task: {
+            id: `task-${Date.now().toString(36)}`,
+            title: `WhatsApp: Send to ${contactName}`,
+            description: `Send WhatsApp message to ${contactName} (${contactPhone})`,
+            status: 'completed',
+            progress: 100,
+            steps: [
+              { id: 's1', name: `Prepare WhatsApp payload for ${contactName}`, status: 'completed' },
+              { id: 's2', name: 'User authorization confirmed', status: 'completed' },
+              { id: 's3', name: 'Launch WhatsApp dispatch', status: 'completed' }
+            ],
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          },
+          conversationId
+        });
+        return;
+      }
+
+      // Preparing a message
+      const recipientQuery = waIntent.recipient || '';
+      const messageContent = waIntent.message || '';
+
+      const resolution = resolveContact(recipientQuery);
+
+      if (resolution.ambiguous) {
+        const optionsList = resolution.matches!
+          .map((m, idx) => `${idx + 1}. **${m.name}** (${m.phone || 'No phone'}) - ${m.company || 'Personal'}`)
+          .join('\n');
+
+        res.status(200).json({
+          success: true,
+          messageId: jarvisMsgId,
+          reply: `Recipient ambiguity detected: Multiple approved contacts match **"${recipientQuery}"**.\n\nPlease clarify which contact you would like to message:\n\n${optionsList}`,
+          needsClarification: true,
+          clarificationQuestion: `Which contact did you mean: ${resolution.matches!.map(m => m.name).join(' or ')}?`,
+          conversationId
+        });
+        return;
+      }
+
+      if (!resolution.resolved || !resolution.contact?.phone) {
+        res.status(200).json({
+          success: true,
+          messageId: jarvisMsgId,
+          reply: `⚠️ Recipient **"${recipientQuery}"** was not found in approved contacts and no valid phone number was supplied.\n\nApproved contacts: ${APPROVED_CONTACTS.map(c => c.name).join(', ')}. Or provide an international phone number (e.g. \`+923001234567\`).`,
+          audioText: `Recipient ${recipientQuery} was not found in approved contacts.`,
+          needsClarification: true,
+          clarificationQuestion: `Could you specify a valid contact name or phone number for ${recipientQuery}?`,
+          conversationId
+        });
+        return;
+      }
+
+      if (!messageContent) {
+        const contactName = resolution.contact.name;
+        res.status(200).json({
+          success: true,
+          messageId: jarvisMsgId,
+          reply: `Contact confirmed: **${contactName}** (${resolution.contact.phone || 'No phone'}).\n\nWhat message would you like to send to ${contactName}?`,
+          audioText: `What message would you like to send to ${contactName}?`,
+          needsClarification: true,
+          clarificationQuestion: `What message would you like to send to ${contactName}?`,
+          conversationId
+        });
+        return;
+      }
+
+      // Valid recipient and message content
+      const contact = resolution.contact;
+      const cleanPhone = formatCleanPhone(contact.phone || recipientQuery);
+      const handoffUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(messageContent)}`;
+
+      res.status(200).json({
+        success: true,
+        messageId: jarvisMsgId,
+        reply: `⚠️ **WhatsApp Confirmation Required**:\n\n- **Recipient**: ${contact.name} (${contact.phone})\n- **Message**: "${messageContent}"\n- **Delivery**: Verified WhatsApp Handoff (\`wa.me\`)\n- **Direct Dispatch**: [▶ Send via WhatsApp](${handoffUrl})\n\nPlease authorize sending or say **"Confirm"** / **"Send it"** to dispatch.`,
+        audioText: `I have prepared the WhatsApp message for ${contact.name}. Please confirm before sending.`,
+        openUrl: handoffUrl,
+        needsClarification: false,
+        task: {
+          id: `task-${Date.now().toString(36)}`,
+          title: `WhatsApp: Send to ${contact.name}`,
+          description: `Send WhatsApp message to ${contact.name}`,
+          status: 'pending',
+          progress: 50,
+          steps: [
+            { id: 'step-1', name: `Prepare WhatsApp message to ${contact.name}`, status: 'completed' },
+            { id: 'step-2', name: 'User Confirmation', status: 'needs_approval' }
+          ],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        },
         conversationId
       });
       return;
@@ -593,53 +887,6 @@ export default async function handler(req: any, res: any) {
         reply: `🖥️ **Desktop Application Request**:\n\nOpening **${appName}**.\n\n*Requires the local companion daemon for desktop control (\`npm run companion\`).*`,
         audioText: `Opening ${appName}.`,
         needsClarification: false,
-        conversationId
-      });
-      return;
-    }
-
-    // 1.6 WhatsApp Messaging Intent
-    const waMatch = trimmed.match(
-      /send\s+(?:a\s+)?whatsapp(?:\s+message)?\s+to\s+([a-zA-Z0-9_\s]+?)(?:\s+(?:saying|with\s+message|that)\s+([\s\S]+))?$/i
-    );
-    if (waMatch) {
-      const recipient = waMatch[1].trim();
-      const textContent = waMatch[2] ? waMatch[2].trim() : '';
-
-      if (!textContent) {
-        res.status(200).json({
-          success: true,
-          messageId: jarvisMsgId,
-          reply: `Recipient set to **${recipient}**. What message would you like to send?`,
-          audioText: `What message would you like to send to ${recipient}?`,
-          needsClarification: true,
-          clarificationQuestion: `What message would you like to send to ${recipient}?`,
-          conversationId
-        });
-        return;
-      }
-
-      res.status(200).json({
-        success: true,
-        messageId: jarvisMsgId,
-        reply: `⚠️ **WhatsApp Confirmation Required**:\n\n- **Recipient**: ${recipient}\n- **Message**: "${textContent}"\n- **Delivery**: Cloud API / Direct Handoff Prepared\n- **Direct Handoff**: [Open WhatsApp Web](https://wa.me/?text=${encodeURIComponent(
-          textContent
-        )})\n\nPlease authorize sending or say **"Confirm"** to dispatch.`,
-        audioText: `I have prepared the WhatsApp message for ${recipient}. Please confirm before sending.`,
-        needsClarification: false,
-        task: {
-          id: `task-${Date.now().toString(36)}`,
-          title: `WhatsApp: Send to ${recipient}`,
-          description: `Send WhatsApp message to ${recipient}`,
-          status: 'pending',
-          progress: 50,
-          steps: [
-            { id: 'step-1', name: `Prepare WhatsApp message to ${recipient}`, status: 'completed' },
-            { id: 'step-2', name: 'User Confirmation', status: 'needs_approval' }
-          ],
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
         conversationId
       });
       return;

@@ -25,6 +25,27 @@ export function resolveContact(query: string): ContactResolution {
   const db = getDatabase();
   const clean = query.trim().toLowerCase();
 
+  // 0. Direct phone number check
+  const phoneDigits = query.replace(/[^0-9+]/g, '');
+  if (phoneDigits.length >= 7) {
+    let cleanDigits = phoneDigits.replace(/[^0-9]/g, '');
+    if (cleanDigits.startsWith('03') && cleanDigits.length === 11) {
+      cleanDigits = '92' + cleanDigits.slice(1);
+    }
+    return {
+      resolved: true,
+      contact: {
+        id: `cnt-${Date.now().toString(36)}`,
+        name: query.trim(),
+        email: null,
+        phone: '+' + cleanDigits,
+        company: 'Direct Phone',
+        created_at: new Date().toISOString()
+      },
+      query
+    };
+  }
+
   // 1. Check exact match
   const exact = db.prepare('SELECT * FROM contacts WHERE LOWER(name) = ?').get(clean) as Contact | undefined;
   if (exact) {
