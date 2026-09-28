@@ -12,6 +12,7 @@ import memoryHandler from './_lib/memory.js';
 import healthHandler from './_lib/health.js';
 import statusHandler from './_lib/status.js';
 import integrationsHandler from './_lib/integrations.js';
+import evaluationHandler from './_lib/evaluation.js';
 
 export default async function handler(req: any, res: any) {
   res.setHeader('Content-Type', 'application/json');
@@ -27,6 +28,9 @@ export default async function handler(req: any, res: any) {
   const url = req.url || '';
   const path = url.split('?')[0].replace(/^\/api\/?/, '');
 
+  if (path === 'evaluation' || path.startsWith('evaluation/')) {
+    return evaluationHandler(req, res);
+  }
   if (path === 'chat' || path.startsWith('chat/')) {
     return chatHandler(req, res);
   }

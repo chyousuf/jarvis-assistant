@@ -37,15 +37,22 @@ test('Security Audit: Personal Protected vs Passcode Enforced Access Modes', () 
   const origPasscode = process.env.JARVIS_ACCESS_PASSCODE;
 
   try {
-    // 1. Personal Protected Mode: When passcode is unset, personal owner access is granted
+    // 1. Guest Demo Mode: When passcode is unset in production, unauthenticated requests are isolated as guest
     process.env.VERCEL = '1';
     delete process.env.JARVIS_ACCESS_PASSCODE;
 
     const unauthReq = { headers: {} };
-    const personalAccess = validateAccess(unauthReq);
-    assert.strictEqual(personalAccess.authorized, true);
-    assert.strictEqual(personalAccess.userId, 'owner');
-    assert.strictEqual(personalAccess.role, 'owner');
+    const guestAccess = validateAccess(unauthReq);
+    assert.strictEqual(guestAccess.authorized, true);
+    assert.strictEqual(guestAccess.userId, 'guest');
+    assert.strictEqual(guestAccess.role, 'guest');
+
+    // In local dev without Vercel or passcode, owner access is granted
+    delete process.env.VERCEL;
+    const localAccess = validateAccess(unauthReq);
+    assert.strictEqual(localAccess.authorized, true);
+    assert.strictEqual(localAccess.userId, 'owner');
+    assert.strictEqual(localAccess.role, 'owner');
 
     // 2. Passcode Enforced Mode: When passcode is set, unauthenticated requests are rejected
     process.env.JARVIS_ACCESS_PASSCODE = 'super-secret-passcode-2026';

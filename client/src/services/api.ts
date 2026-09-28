@@ -1163,5 +1163,13 @@ export const api = {
     } finally {
       setSessionToken('');
     }
+  },
+
+  async getEvaluationRecord(): Promise<{ success: boolean; record: any }> {
+    return fetchJson(`${API_BASE}/evaluation`);
+  },
+
+  async runEvaluation(): Promise<{ success: boolean; record: any }> {
+    return fetchJson(`${API_BASE}/evaluation`, { method: 'POST' });
   }
 };

@@ -21,14 +21,17 @@ export default async function handler(req: any, res: any) {
   // GET /api/auth/status or GET /api/auth
   if (req.method === 'GET' || action === 'status') {
     const auth = validateAccess(req);
+    const isOwner = auth.authorized && auth.role === 'owner';
 
     res.status(200).json({
       success: true,
-      authenticated: auth.authorized,
+      authenticated: isOwner,
       passcodeRequired: !!serverPasscode,
-      configured: true,
-      user: auth.authorized ? { id: auth.userId, role: auth.role } : null,
-      mode: serverPasscode ? 'passcode_enforced' : 'personal_protected',
+      configured: !!serverPasscode,
+      user: { id: auth.userId, role: auth.role },
+      mode: serverPasscode
+        ? (isOwner ? 'passcode_authenticated' : 'passcode_enforced')
+        : (isProd ? 'public_demo' : 'local_dev'),
       error: auth.error,
       message: auth.message,
       timestamp: new Date().toISOString()

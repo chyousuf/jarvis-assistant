@@ -153,9 +153,19 @@ export function validateAccess(req: any): AuthContext {
 
   // In non-production (local development) without a passcode set:
   // Allow local owner access, with support for testing alternate users via x-jarvis-user-id
+  if (!isProd) {
+    return {
+      authorized: true,
+      userId: tenantOverride || 'owner',
+      role: 'owner'
+    };
+  }
+
+  // In production without a passcode configured:
+  // Isolate guest demo sessions from owner data so public visitors don't claim owner status
   return {
     authorized: true,
-    userId: tenantOverride || 'owner',
-    role: 'owner'
+    userId: tenantOverride || 'guest',
+    role: 'guest'
   };
 }

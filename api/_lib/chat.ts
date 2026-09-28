@@ -1033,6 +1033,15 @@ export default async function handler(req: any, res: any) {
           }
         }
 
+        // Grounded citation verification: attach citations only if the response actually cites or relies on the document
+        const replyCitesDoc = citations.some(c => 
+          aiResult.reply.includes(c.docTitle) || 
+          aiResult.reply.includes('[Source:') ||
+          aiResult.reply.includes('Source:') ||
+          aiResult.reply.toLowerCase().includes(c.content.slice(0, 35).toLowerCase())
+        );
+        const verifiedCitations = (isDocQAQuery || replyCitesDoc) && citations.length > 0 ? citations : undefined;
+
         res.status(200).json({
           success: true,
           messageId: jarvisMsgId,
@@ -1050,7 +1059,7 @@ export default async function handler(req: any, res: any) {
             approvedCorrection: appliedCorrection.approvedCorrection,
             scope: appliedCorrection.scope
           } : undefined,
-          citations: citations.length > 0 ? citations : undefined
+          citations: verifiedCitations
         });
         return;
       } catch (aiErr: any) {

@@ -208,11 +208,17 @@ export function retrieveRelevantPassages(
     return { passages: [], hasEvidence: false, queryTerms: [] };
   }
 
-  // Tokenize and filter stop words
+  // Tokenize and filter stop words and common task verbs
   const stopWords = new Set([
     'what', 'is', 'the', 'and', 'or', 'a', 'an', 'in', 'on', 'of', 'for', 'with', 'to',
     'at', 'by', 'from', 'this', 'that', 'it', 'tell', 'me', 'about', 'how', 'does', 'do',
-    'can', 'you', 'explain', 'read', 'my', 'approved', 'document', 'answer', 'question'
+    'can', 'you', 'explain', 'read', 'my', 'approved', 'document', 'answer', 'question',
+    // Ordinary task, drafting, and conversational words that must not trigger document knowledge
+    'draft', 'write', 'create', 'compose', 'send', 'invitation', 'invite', 'meeting',
+    'email', 'letter', 'schedule', 'summarize', 'revise', 'edit', 'shorten', 'rephrase',
+    'hello', 'hi', 'hey', 'jarvis', 'assistant', 'please', 'help', 'thanks', 'thank',
+    'sir', 'team', 'dinner', 'lunch', 'party', 'event', 'today', 'tomorrow', 'yesterday',
+    'good', 'morning', 'afternoon', 'evening', 'night'
   ]);
 
   const queryTerms = userQuery
@@ -234,26 +240,37 @@ export function retrieveRelevantPassages(
     allChunks.push(...chunks);
   }
 
-  // Score each chunk
+  // Score each chunk: require multiple term matches or high-confidence title match
   const scored = allChunks.map(chunk => {
     const textLower = (chunk.docTitle + ' ' + chunk.content).toLowerCase();
     let score = 0;
+    let termMatches = 0;
 
     for (const term of queryTerms) {
       if (textLower.includes(term)) {
+        termMatches++;
         score += 2;
-        // Boost for title match
         if (chunk.docTitle.toLowerCase().includes(term)) {
           score += 3;
         }
       }
     }
 
-    return { chunk, score };
+    // Exact multi-word phrase bonus
+    if (queryTerms.length >= 2) {
+      const phrase = queryTerms.slice(0, 3).join(' ');
+      if (textLower.includes(phrase)) {
+        score += 6;
+        termMatches += 2;
+      }
+    }
+
+    return { chunk, score, termMatches };
   });
 
+  // Strict relevance threshold: require score >= 4 and at least one substantive term match
   const matched = scored
-    .filter(s => s.score >= 2)
+    .filter(s => s.score >= 4 && s.termMatches >= 1)
     .sort((a, b) => b.score - a.score)
     .slice(0, topK)
     .map(s => s.chunk);

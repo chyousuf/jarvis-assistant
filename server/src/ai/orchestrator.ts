@@ -1028,6 +1028,16 @@ export class JarvisOrchestrator {
           }
         }
 
+        // Grounded citation verification: attach citations only if the response actually cites or relies on the document
+        const replyCitesDoc = citations.some(c => 
+          aiRes.reply.includes(c.docTitle) || 
+          aiRes.reply.includes('[Source:') ||
+          aiRes.reply.includes('Source:') ||
+          aiRes.reply.toLowerCase().includes(c.content.slice(0, 35).toLowerCase())
+        );
+        const isDocQAIntent = /read\s+(?:this\s+)?(?:approved\s+)?document|according\s+to\s+(?:the\s+)?document|in\s+(?:the\s+)?document|based\s+on\s+(?:the\s+)?document/i.test(text);
+        const verifiedCitations = (isDocQAIntent || replyCitesDoc) && citations.length > 0 ? citations : undefined;
+
         return {
           reply: aiRes.reply,
           needsClarification: false,
@@ -1041,7 +1051,7 @@ export class JarvisOrchestrator {
             approvedCorrection: appliedCorrection.approvedCorrection,
             scope: appliedCorrection.scope
           } : undefined,
-          citations: citations.length > 0 ? citations : undefined
+          citations: verifiedCitations
         };
       } catch (aiErr: any) {
         return {

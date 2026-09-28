@@ -410,7 +410,7 @@ export const ConnectionsModal: React.FC = () => {
               {authStatus?.authenticated ? (
                 <>
                   <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                  <span>{authStatus?.passcodeRequired ? 'AUTHENTICATED OWNER' : 'PERSONAL SECURE (ACTIVE)'}</span>
+                  <span>AUTHENTICATED OWNER</span>
                 </>
               ) : authStatus?.passcodeRequired ? (
                 <>
@@ -418,7 +418,10 @@ export const ConnectionsModal: React.FC = () => {
                   <span>PASSCODE REQUIRED</span>
                 </>
               ) : (
-                'PERSONAL PROTECTED'
+                <>
+                  <Globe className="w-3 h-3 text-cyan-400" />
+                  <span>PUBLIC DEMO (GUEST)</span>
+                </>
               )}
             </span>
           </div>
@@ -432,27 +435,21 @@ export const ConnectionsModal: React.FC = () => {
               <div className="flex items-center justify-between">
                 <span className="text-emerald-300 font-mono font-semibold flex items-center gap-1.5">
                   <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  {authStatus.passcodeRequired
-                    ? `Authenticated as Owner (${authStatus.userId || 'owner'})`
-                    : `Personal Deployment Active (${authStatus.userId || 'owner'})`}
+                  Authenticated as Owner ({authStatus.userId || 'owner'})
                 </span>
-                {authStatus.passcodeRequired && (
-                  <button
-                    onClick={handleLogout}
-                    disabled={authLoading}
-                    className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono"
-                  >
-                    {authLoading ? 'Signing out...' : 'Sign Out'}
-                  </button>
-                )}
+                <button
+                  onClick={handleLogout}
+                  disabled={authLoading}
+                  className="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-mono"
+                >
+                  {authLoading ? 'Signing out...' : 'Sign Out'}
+                </button>
               </div>
               <div className="text-[11px] text-slate-400">
-                {authStatus.passcodeRequired
-                  ? 'HMAC-SHA256 session token active. Full access to chat, memory, documents, routines, and desktop automation.'
-                  : 'Sliding-window IP rate limiting and payload bounding active. To enable passcode protection on public deployments, set JARVIS_ACCESS_PASSCODE in your Vercel settings.'}
+                HMAC-SHA256 session token active. Full access to chat, memory, documents, routines, and desktop automation.
               </div>
             </div>
-          ) : (
+          ) : authStatus?.passcodeRequired ? (
             <div className="space-y-2">
               <div className="flex gap-2">
                 <input
@@ -482,6 +479,44 @@ export const ConnectionsModal: React.FC = () => {
               {passcodeSavedNotice && (
                 <div className="text-[11px] text-emerald-400 font-mono">
                   ✓ Session authenticated successfully.
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="p-3 bg-cyan-950/20 border border-cyan-500/30 rounded-xl space-y-2 text-xs">
+              <div className="flex items-center gap-1.5 text-cyan-300 font-mono font-semibold">
+                <Globe className="w-3.5 h-3.5 text-cyan-400" />
+                Guest Sandbox Active (Session: {authStatus?.user?.id || authStatus?.userId || 'guest'})
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                You are interacting with JARVIS in guest demo mode. Demonstrations, chats, and documents run in an isolated sandbox. To lock this deployment to private owner-only access, add <code className="text-cyan-300 bg-slate-900 px-1 py-0.5 rounded">JARVIS_ACCESS_PASSCODE</code> in your Vercel project environment variables.
+              </p>
+              <div className="pt-1 flex gap-2">
+                <input
+                  type="password"
+                  placeholder="Enter passcode if newly configured..."
+                  value={passcodeInput}
+                  onChange={(e) => setPasscodeInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                  className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 font-mono outline-none focus:border-cyan-500"
+                />
+                <button
+                  onClick={handleLogin}
+                  disabled={authLoading}
+                  className="px-3 py-1.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold shrink-0 transition-colors"
+                >
+                  {authLoading ? 'Verifying...' : 'Sign In'}
+                </button>
+              </div>
+              {authError && (
+                <div className="text-[11px] text-rose-400 font-mono flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  <span>{authError}</span>
+                </div>
+              )}
+              {passcodeSavedNotice && (
+                <div className="text-[11px] text-emerald-400 font-mono">
+                  ✓ Authenticated as Owner.
                 </div>
               )}
             </div>

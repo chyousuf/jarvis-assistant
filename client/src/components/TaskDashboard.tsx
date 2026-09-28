@@ -137,8 +137,8 @@ export const TaskDashboard: React.FC<TaskDashboardProps> = ({ tasks, onCancelTas
                 </div>
 
                 <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
-                  <span>{t.steps.length} steps</span>
-                  <span>{new Date(t.created_at).toLocaleTimeString()}</span>
+                  <span>{(t.steps || []).length} steps</span>
+                  <span>{t.created_at ? new Date(t.created_at).toLocaleTimeString() : 'Recent'}</span>
                   {t.status === 'running' && (
                     <button
                       onClick={(e) => {
@@ -166,7 +166,7 @@ export const TaskDashboard: React.FC<TaskDashboardProps> = ({ tasks, onCancelTas
                     ID: {selectedTask.id}
                   </span>
                   <h3 className="text-base font-bold text-slate-100 mt-1">
-                    {selectedTask.title}
+                    {selectedTask.title || 'Untitled Task'}
                   </h3>
                 </div>
                 {getStatusBadge(selectedTask.status)}
@@ -175,14 +175,19 @@ export const TaskDashboard: React.FC<TaskDashboardProps> = ({ tasks, onCancelTas
               {/* Steps Detailed View */}
               <div className="py-4">
                 <h4 className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-3">
-                  Execution Steps ({selectedTask.steps.length})
+                  Execution Steps ({(selectedTask.steps || []).length})
                 </h4>
-                <div className="space-y-2">
-                  {selectedTask.steps.map((s, idx) => (
-                    <div
-                      key={s.id}
-                      className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80 text-xs"
-                    >
+                {(selectedTask.steps || []).length === 0 ? (
+                  <div className="p-3 rounded-lg bg-slate-950/40 border border-slate-800/60 text-xs text-slate-500 font-mono">
+                    No discrete execution steps logged. Task executed atomically.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {(selectedTask.steps || []).map((s, idx) => (
+                      <div
+                        key={s.id || idx}
+                        className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80 text-xs"
+                      >
                       <div className="flex items-center justify-between gap-2 mb-1">
                         <span className="font-medium text-slate-200">
                           {idx + 1}. {s.name}
@@ -210,7 +215,8 @@ export const TaskDashboard: React.FC<TaskDashboardProps> = ({ tasks, onCancelTas
                     </div>
                   ))}
                 </div>
-              </div>
+              )}
+            </div>
 
               {/* Result / Outcome */}
               {selectedTask.result && (

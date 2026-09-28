@@ -19,6 +19,7 @@ import voiceRouter from './routes/voice.js';
 import aiRouter from './routes/ai.js';
 import { learningRouter } from './routes/learning.js';
 import authRouter from './routes/auth.js';
+import { evaluationRouter } from './routes/evaluation.js';
 import { subscribeToTaskEvents } from './tasks/taskRunner.js';
 import { pollDueReminders } from './tools/reminders.js';
 
@@ -89,6 +90,7 @@ app.use('/api/companion', companionRouter);
 app.use('/api/voice', voiceRouter);
 app.use('/api/ai', aiRouter);
 app.use('/api/learning', learningRouter);
+app.use('/api/evaluation', evaluationRouter);
 
 // Server-Sent Events (SSE) for Real-Time Telemetry & Progress
 const sseClients = new Set<Response>();

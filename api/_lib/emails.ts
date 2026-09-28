@@ -7,6 +7,8 @@ interface EmailRecord {
   body: string;
   attachments?: string[];
   status: 'draft' | 'queued' | 'sent' | 'failed';
+  provider?: string;
+  provider_message_id?: string;
   idempotency_key?: string;
   created_at: string;
   updated_at: string;
@@ -20,6 +22,7 @@ const storedEmails: EmailRecord[] = [
     body: 'Good day Ali, please review the attached architecture blueprint.',
     attachments: [],
     status: 'draft',
+    provider: 'gmail/direct',
     created_at: new Date(Date.now() - 7200000).toISOString(),
     updated_at: new Date(Date.now() - 7200000).toISOString()
   },
@@ -30,6 +33,8 @@ const storedEmails: EmailRecord[] = [
     body: 'The Q3 milestones have been updated and all tests are passing.',
     attachments: [],
     status: 'sent',
+    provider: 'gmail/direct',
+    provider_message_id: 'msg-gml-882194',
     created_at: new Date(Date.now() - 86400000).toISOString(),
     updated_at: new Date(Date.now() - 86400000).toISOString()
   }
@@ -77,6 +82,7 @@ export default async function handler(req: any, res: any) {
       body: emailBody,
       attachments: attachments || [],
       status: 'draft',
+      provider: 'gmail/direct',
       created_at: now,
       updated_at: now
     };

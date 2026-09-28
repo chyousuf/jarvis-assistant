@@ -176,12 +176,12 @@ export const EmailDashboard: React.FC = () => {
                       ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                       : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
                   }`}>
-                    {item.status.toUpperCase()}
+                    {(item.status || 'draft').toUpperCase()}
                   </span>
                 </div>
 
                 <p className="text-xs text-slate-300 bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/80 mb-3 whitespace-pre-wrap">
-                  {item.body}
+                  {item.body || 'No message content.'}
                 </p>
 
                 {item.attachments && item.attachments.length > 0 && (
@@ -199,7 +199,7 @@ export const EmailDashboard: React.FC = () => {
                 )}
 
                 <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-[11px] text-slate-500 font-mono">
-                  <span>Provider: {item.provider.toUpperCase()}</span>
+                  <span>Provider: {(item.provider || 'direct/local').toUpperCase()}</span>
                   {item.status === 'draft' && (
                     <button
                       onClick={() => handleSend(item.id)}
@@ -211,7 +211,7 @@ export const EmailDashboard: React.FC = () => {
                   )}
                   {item.status === 'sent' && (
                     <span className="text-emerald-400 flex items-center gap-1">
-                      <CheckCircle2 className="w-3 h-3" /> Confirmed Dispatched ({item.provider_message_id})
+                      <CheckCircle2 className="w-3 h-3" /> Confirmed Dispatched {item.provider_message_id ? `(${item.provider_message_id})` : ''}
                     </span>
                   )}
                 </div>

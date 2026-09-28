@@ -17,6 +17,7 @@ import { LearningCenterModal } from './components/LearningCenterModal.js';
 import { api, Message, Task, Approval } from './services/api.js';
 import { voiceService, VoiceState, LanguageMode, TranscriptResult } from './services/voice.js';
 import { Bell, X } from 'lucide-react';
+import { ErrorBoundary } from './components/ErrorBoundary.js';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ActiveTab>('chat');
@@ -68,9 +69,24 @@ export const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Load initial data
+  // Load initial data and restore saved conversation
   useEffect(() => {
-    api.getHistory().then(setMessages).catch(() => setServerOnline(false));
+    try {
+      const cached = localStorage.getItem(`jarvis_chat_${currentConversationId}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMessages(parsed);
+        }
+      }
+    } catch {}
+
+    api.getHistory(currentConversationId).then((serverMsgs) => {
+      if (serverMsgs && serverMsgs.length > 0) {
+        setMessages(serverMsgs);
+      }
+    }).catch(() => setServerOnline(false));
+
     api.getTasks().then(setTasks).catch(() => {});
     api.getPendingApprovals().then(setPendingApprovals).catch(() => {});
 
@@ -227,6 +243,15 @@ export const App: React.FC = () => {
       setIsLoading(false);
     }
   };
+
+  // Sync messages to localStorage to guarantee conversation restoration on refresh
+  useEffect(() => {
+    if (messages.length > 0) {
+      try {
+        localStorage.setItem(`jarvis_chat_${currentConversationId}`, JSON.stringify(messages));
+      } catch {}
+    }
+  }, [messages, currentConversationId]);
 
   // Start fresh conversation session (session isolation)
   const handleNewConversation = () => {
@@ -391,54 +416,56 @@ export const App: React.FC = () => {
         />
 
         <main className="flex-1 overflow-y-auto bg-slate-950">
-          {activeTab === 'chat' && (
-            <ChatInterface
-              messages={messages}
-              onSendMessage={handleSendMessage}
-              onNewConversation={handleNewConversation}
-              onCorrectMessage={handleCorrectMessage}
-              isLoading={isLoading}
-              activeTask={activeTask}
-              pendingApprovals={pendingApprovals}
-              onResolveApproval={handleResolveApproval}
-              onCancelTask={handleCancelTask}
-              voiceState={voiceState}
-              isListening={isListening}
-              onToggleListening={handleToggleListening}
-              voiceTranscript={voiceTranscript}
-              language={language}
-              onToggleLanguage={handleToggleLanguage}
-              onNavigateTab={(tab) => setActiveTab(tab)}
-            />
-          )}
+          <ErrorBoundary fallbackTitle={`Error in ${activeTab.toUpperCase()} view`}>
+            {activeTab === 'chat' && (
+              <ChatInterface
+                messages={messages}
+                onSendMessage={handleSendMessage}
+                onNewConversation={handleNewConversation}
+                onCorrectMessage={handleCorrectMessage}
+                isLoading={isLoading}
+                activeTask={activeTask}
+                pendingApprovals={pendingApprovals}
+                onResolveApproval={handleResolveApproval}
+                onCancelTask={handleCancelTask}
+                voiceState={voiceState}
+                isListening={isListening}
+                onToggleListening={handleToggleListening}
+                voiceTranscript={voiceTranscript}
+                language={language}
+                onToggleLanguage={handleToggleLanguage}
+                onNavigateTab={(tab) => setActiveTab(tab)}
+              />
+            )}
 
-          {activeTab === 'tasks' && (
-            <TaskDashboard
-              tasks={tasks}
-              onCancelTask={handleCancelTask}
-              onRefresh={() => api.getTasks().then(setTasks)}
-            />
-          )}
+            {activeTab === 'tasks' && (
+              <TaskDashboard
+                tasks={tasks}
+                onCancelTask={handleCancelTask}
+                onRefresh={() => api.getTasks().then(setTasks)}
+              />
+            )}
 
-          {activeTab === 'learning' && (
-            <LearningCenterModal
-              prefilledCorrection={prefilledCorrection}
-              onClose={() => setPrefilledCorrection(null)}
-              onRunRoutine={(routine) => {
-                setActiveTab('chat');
-                handleSendMessage(`Run routine: ${routine.name}`);
-              }}
-            />
-          )}
+            {activeTab === 'learning' && (
+              <LearningCenterModal
+                prefilledCorrection={prefilledCorrection}
+                onClose={() => setPrefilledCorrection(null)}
+                onRunRoutine={(routine) => {
+                  setActiveTab('chat');
+                  handleSendMessage(`Run routine: ${routine.name}`);
+                }}
+              />
+            )}
 
-          {activeTab === 'computer' && <ComputerControlModal />}
-          {activeTab === 'emails' && <EmailDashboard />}
-          {activeTab === 'whatsapp' && <WhatsAppDashboard />}
-          {activeTab === 'calendar' && <CalendarDashboard />}
-          {activeTab === 'workspace' && <WorkspaceModal />}
-          {activeTab === 'reminders' && <RemindersModal />}
-          {activeTab === 'connections' && <ConnectionsModal />}
-          {activeTab === 'activity' && <ActivityLogModal />}
+            {activeTab === 'computer' && <ComputerControlModal />}
+            {activeTab === 'emails' && <EmailDashboard />}
+            {activeTab === 'whatsapp' && <WhatsAppDashboard />}
+            {activeTab === 'calendar' && <CalendarDashboard />}
+            {activeTab === 'workspace' && <WorkspaceModal />}
+            {activeTab === 'reminders' && <RemindersModal />}
+            {activeTab === 'connections' && <ConnectionsModal />}
+            {activeTab === 'activity' && <ActivityLogModal />}
+          </ErrorBoundary>
         </main>
       </div>
 
