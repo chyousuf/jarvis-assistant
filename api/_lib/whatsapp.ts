@@ -1,4 +1,5 @@
 import { validateAccess } from './authService.js';
+import { APPROVED_CONTACTS } from './contacts.js';
 
 interface WhatsAppMessageRecord {
   id: string;
@@ -63,15 +64,17 @@ export default async function handler(req: any, res: any) {
       return;
     }
 
-    const cleanNumber = formatPhone(recipient);
+    const matchedContact = APPROVED_CONTACTS.find(c => c.name.toLowerCase() === recipient.toLowerCase() || c.name.toLowerCase().includes(recipient.toLowerCase()));
+    const rawPhone = matchedContact?.phone || recipient;
+    const cleanNumber = formatPhone(rawPhone);
     const handoffUrl = `https://wa.me/${cleanNumber}?text=${encodeURIComponent(message)}`;
     const id = `wa-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
     const now = new Date().toISOString();
 
     const record: WhatsAppMessageRecord = {
       id,
-      recipient_name: recipient,
-      recipient_phone: recipient.startsWith('+') ? recipient : `+${cleanNumber}`,
+      recipient_name: matchedContact?.name || recipient,
+      recipient_phone: rawPhone.startsWith('+') ? rawPhone : (cleanNumber ? `+${cleanNumber}` : rawPhone),
       message_text: message,
       status: 'pending_approval',
       handoff_url: handoffUrl,
