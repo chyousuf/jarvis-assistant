@@ -107,13 +107,30 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, activeTask, pendingApprovals]);
 
+  const [commandQueue, setCommandQueue] = useState<string[]>([]);
+
+  // Dequeue next message as soon as current request finishes
+  useEffect(() => {
+    if (!isLoading && commandQueue.length > 0) {
+      const nextMessage = commandQueue[0];
+      setCommandQueue(prev => prev.slice(1));
+      onSendMessage(nextMessage);
+    }
+  }, [isLoading, commandQueue, onSendMessage]);
+
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!inputText.trim() || isLoading) return;
-    const text = inputText;
+    const text = inputText.trim();
+    if (!text) return;
     setInputText('');
-    onSendMessage(text);
+
+    if (isLoading) {
+      setCommandQueue(prev => [...prev, text]);
+    } else {
+      onSendMessage(text);
+    }
   };
+
 
   const handleSaveScopedCorrection = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -431,17 +448,37 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
         ))}
 
         {isLoading && (
-          <div className="flex items-center gap-2 p-3 text-xs font-mono text-cyan-400">
-            <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
-            <span>JARVIS is evaluating context and resolving response...</span>
+          <div className="flex items-center justify-between p-3 text-xs font-mono text-cyan-400 bg-slate-900/60 rounded-xl border border-cyan-500/20">
+            <div className="flex items-center gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
+              <span>JARVIS is evaluating context and resolving response...</span>
+            </div>
+            {commandQueue.length > 0 && (
+              <span className="px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-[11px] text-cyan-300 font-bold">
+                {commandQueue.length} queued
+              </span>
+            )}
           </div>
         )}
 
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Queue Indicator Banner */}
+      {commandQueue.length > 0 && (
+        <div className="flex items-center justify-between px-3 py-1.5 mb-1.5 rounded-lg bg-cyan-950/70 border border-cyan-500/40 text-cyan-300 text-xs font-mono animate-fadeIn">
+          <div className="flex items-center gap-2 overflow-hidden">
+            <Clock className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <span className="font-bold shrink-0">Command Queue ({commandQueue.length}):</span>
+            <span className="text-slate-300 truncate italic">"{commandQueue[0]}"</span>
+            {commandQueue.length > 1 && <span className="text-slate-500 text-[11px] shrink-0">(+{commandQueue.length - 1} more)</span>}
+          </div>
+          <span className="text-[10px] text-cyan-400/80 font-sans shrink-0">Will run next automatically</span>
+        </div>
+      )}
+
       {/* Input Bar */}
-      <form onSubmit={handleSubmit} className="mt-2 shrink-0">
+      <form onSubmit={handleSubmit} className="mt-1 shrink-0">
         <div className="relative flex items-center">
           <input
             type="text"
@@ -450,9 +487,10 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             placeholder={
               isListening
                 ? 'Listening to speech... (Urdu, English, Roman-Urdu)'
+                : isLoading
+                ? 'Type next command (queued to execute automatically)...'
                 : 'Ask JARVIS, request calculations, research reports, or dictate a command...'
             }
-            disabled={isLoading}
             className="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-4 py-3 pr-24 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500/80 focus:ring-1 focus:ring-cyan-500/30 transition-all shadow-inner"
           />
 
@@ -483,7 +521,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
 
             <button
               type="submit"
-              disabled={!inputText.trim() || isLoading}
+              disabled={!inputText.trim()}
+              title={isLoading ? 'Add command to queue' : 'Send message'}
               className="p-2 rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 hover:bg-cyan-500/30 disabled:opacity-40 disabled:hover:bg-cyan-500/20 transition-all"
             >
               <Send className="w-4 h-4" />
@@ -491,6 +530,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           </div>
         </div>
       </form>
+
 
       {/* Scoped Correction Modal */}
       {scopedModal && (

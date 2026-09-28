@@ -26,6 +26,34 @@
       "destination": "/api/learning"
     },
     {
+      "source": "/api/emails/:match*",
+      "destination": "/api/emails"
+    },
+    {
+      "source": "/api/calendar/:match*",
+      "destination": "/api/calendar"
+    },
+    {
+      "source": "/api/whatsapp/:match*",
+      "destination": "/api/whatsapp"
+    },
+    {
+      "source": "/api/contacts/:match*",
+      "destination": "/api/contacts"
+    },
+    {
+      "source": "/api/memory/:match*",
+      "destination": "/api/memory"
+    },
+    {
+      "source": "/api/tasks/:match*",
+      "destination": "/api/tasks"
+    },
+    {
+      "source": "/api/files/:match*",
+      "destination": "/api/files"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

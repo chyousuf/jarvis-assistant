@@ -82,13 +82,13 @@ export function normalizeGeminiContents(messages: ChatMessage[]): Array<{ role: 
 /**
  * Call Google Gemini API via native fetch
  */
-async function callGemini(apiKey: string, messages: ChatMessage[], modelName = 'gemini-3.5-flash', customSystem?: string): Promise<AIResponse> {
+async function callGemini(apiKey: string, messages: ChatMessage[], modelName = 'gemini-flash-lite-latest', customSystem?: string): Promise<AIResponse> {
   const modelsToTry = [
-    modelName,
-    'gemini-3.5-flash',
+    modelName && modelName !== 'gemini-3.5-flash' ? modelName : 'gemini-flash-lite-latest',
+    'gemini-flash-lite-latest',
     'gemini-3.1-flash-lite-preview',
-    'gemini-3-flash-preview',
-    'gemini-3.5-flash-lite'
+    'gemini-3.1-flash-lite',
+    'gemini-flash-latest'
   ];
   const uniqueModels = Array.from(new Set(modelsToTry));
 
@@ -113,7 +113,7 @@ async function callGemini(apiKey: string, messages: ChatMessage[], modelName = '
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(30000)
+        signal: AbortSignal.timeout(6000)
       });
 
       if (!res.ok) {
@@ -287,7 +287,7 @@ export function resolveAIConfig(customKey?: string, customProvider?: string): AI
   return {
     provider,
     apiKey,
-    model: process.env.AI_MODEL || (provider === 'gemini' ? 'gemini-3.5-flash' : provider === 'groq' ? 'llama-3.3-70b-versatile' : undefined)
+    model: process.env.AI_MODEL || (provider === 'gemini' ? 'gemini-flash-lite-latest' : provider === 'groq' ? 'llama-3.3-70b-versatile' : undefined)
   };
 }
 
@@ -302,7 +302,7 @@ export async function executeAIConversation(
 
   switch (provider) {
     case 'gemini':
-      return callGemini(apiKey, messages, model || 'gemini-3.5-flash', systemInstruction);
+      return callGemini(apiKey, messages, model || 'gemini-flash-lite-latest', systemInstruction);
     case 'groq':
       return callOpenAICompatible(
         apiKey,
@@ -391,9 +391,3 @@ export function classifyAIError(err: any): { errorCode: string; errorMessage: st
     errorMessage: msg
   };
 }
-
-export default function handler(req: any, res: any) {
-  res.setHeader('Content-Type', 'application/json');
-  res.status(200).json({ success: true, service: 'aiService' });
-}
-
