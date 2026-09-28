@@ -391,3 +391,8 @@ export function classifyAIError(err: any): { errorCode: string; errorMessage: st
     errorMessage: msg
   };
 }
+
+export default function handler(req: any, res: any) {
+  res.setHeader('Content-Type', 'application/json');
+  res.status(200).json({ success: true, service: 'aiService' });
+}
